@@ -56,6 +56,7 @@
 #include "colormap_selector.h"
 
 #include "statistics_dialog.h"
+#include "run_set.h"
 
 class TimeScaleDraw : public QwtScaleDraw
 {
@@ -182,6 +183,23 @@ PlotWidget::PlotWidget(PlotDataMapRef& datamap, QWidget* parent)
   _show_point_text = new QwtPlotMarker();
   _show_point_text->setAxes(QwtPlot::xBottom, QwtPlot::yLeft);
   _show_point_text->attach(qwtPlot());
+
+  _run_band_item = new RunBandItem();
+  _run_band_item->setTimeOffset(&_time_offset);
+  _run_band_item->attach(qwtPlot());
+
+  connect(&RunSet::instance(), &RunSet::runsChanged, this, [this]() {
+    if (_compare_mode)
+    {
+      updateCompareFooter();
+      if (!_compare_signals.empty())
+      {
+        rebuildCompareCurves();
+        emit curveListChanged();
+      }
+    }
+    replot();
+  });
 }
 
 PlotWidget::~PlotWidget()
@@ -357,17 +375,29 @@ void PlotWidget::canvasContextMenuTriggered(const QPoint& pos)
   QMenu menu(qwtPlot());
   menu.setStyleSheet(kCompactMenuIconStyle);
 
-  menu.addAction(_action_edit);
-  menu.addAction(_action_formula);
-  if (isXYPlot())
+  if (_compare_mode)
   {
-    menu.addAction(_action_convert_to_map);
+    // XY plots, transforms and the curve editor assume one curve per signal in
+    // absolute time, so they are not offered in a Compare tab. Map panels draw
+    // one path per run there instead.
+    menu.addAction(_action_split_vertical);
+    menu.addAction(_action_new_map_split);
+    menu.addSeparator();
   }
-  menu.addSeparator();
-  menu.addAction(_action_split_vertical);
-  menu.addAction(_action_new_map_split);
-  menu.addAction(_action_split_horizontal);
-  menu.addSeparator();
+  else
+  {
+    menu.addAction(_action_edit);
+    menu.addAction(_action_formula);
+    if (isXYPlot())
+    {
+      menu.addAction(_action_convert_to_map);
+    }
+    menu.addSeparator();
+    menu.addAction(_action_split_vertical);
+    menu.addAction(_action_new_map_split);
+    menu.addAction(_action_split_horizontal);
+    menu.addSeparator();
+  }
   menu.addAction(_action_zoomOutMaximum);
   menu.addAction(_action_zoomOutHorizontally);
   menu.addAction(_action_zoomOutVertically);
@@ -512,6 +542,27 @@ PlotWidgetBase::CurveInfo* PlotWidget::addCurve(const std::string& name, QColor 
     return nullptr;
   }
 
+  if (_compare_mode)
+  {
+    if (_mapped_data.numeric.count(name) == 0 ||
+        std::find(_compare_signals.begin(), _compare_signals.end(), name) !=
+            _compare_signals.end())
+    {
+      return nullptr;
+    }
+    _compare_signals.push_back(name);
+    rebuildCompareCurves();
+    for (auto& info : curveList())
+    {
+      if (info.src_name == name)
+      {
+        return &info;
+      }
+    }
+    // No included runs yet: the signal is remembered and drawn once runs exist.
+    return nullptr;
+  }
+
   PlotWidgetBase::CurveInfo* info = nullptr;
 
   auto it1 = _mapped_data.numeric.find(name);
@@ -550,6 +601,26 @@ bool PlotWidget::ensureCurveLoaded(const std::string& name)
 
 void PlotWidget::removeCurve(const QString& title)
 {
+  if (_compare_mode)
+  {
+    std::string signal = title.toStdString();
+    for (const auto& info : curveList())
+    {
+      if (info.curve->title().text() == title)
+      {
+        signal = info.src_name;
+        break;
+      }
+    }
+    auto it = std::find(_compare_signals.begin(), _compare_signals.end(), signal);
+    if (it != _compare_signals.end())
+    {
+      _compare_signals.erase(it);
+      rebuildCompareCurves();
+      emit curveListChanged();
+    }
+    return;
+  }
   PlotWidgetBase::removeCurve(title);
   _tracker->redraw();
   _reference_tracker->redraw();
@@ -558,6 +629,9 @@ void PlotWidget::removeCurve(const QString& title)
 void PlotWidget::onDataSourceRemoved(const std::string& src_name)
 {
   bool deleted = false;
+
+  _compare_signals.erase(std::remove(_compare_signals.begin(), _compare_signals.end(), src_name),
+                         _compare_signals.end());
 
   for (auto it = curveList().begin(); it != curveList().end();)
   {
@@ -594,6 +668,7 @@ void PlotWidget::onDataSourceRemoved(const std::string& src_name)
 
 void PlotWidget::removeAllCurves()
 {
+  _compare_signals.clear();
   PlotWidgetBase::removeAllCurves();
   setModeXY(false);
   _tracker->redraw();
@@ -650,7 +725,7 @@ void PlotWidget::onDragEnterEvent(QDragEnterEvent* event)
       qDebug() << "FATAL: Dragging " << _dragging.curves.size() << " curves";
       return;
     }
-    if (curveList().empty() || isXYPlot())
+    if (!_compare_mode && (curveList().empty() || isXYPlot()))
     {
       _dragging.mode = DragInfo::NEW_XY;
       event->acceptProposedAction();
@@ -682,6 +757,14 @@ void PlotWidget::onDropEvent(QDropEvent* event)
     }
     bool scatter_curves = (scatter_count == _dragging.curves.size());
     dropped_timeseries = !scatter_curves;
+    if (_compare_mode && scatter_count > 0)
+    {
+      _dragging.mode = DragInfo::NONE;
+      _dragging.curves.clear();
+      QMessageBox::warning(qwtPlot(), "Warning",
+                           tr("A Compare tab only accepts time-series signals."));
+      return;
+    }
     if (scatter_count > 0 && !scatter_curves)
     {
       _dragging.mode = DragInfo::NONE;
@@ -847,8 +930,23 @@ QDomElement PlotWidget::xmlSaveState(QDomDocument& doc) const
     }
   }
 
+  if (_compare_mode)
+  {
+    // Per-run curves are derived from the run list; only the signals are saved.
+    for (const auto& name : _compare_signals)
+    {
+      QDomElement curve_el = doc.createElement("curve");
+      curve_el.setAttribute("name", QString::fromStdString(name));
+      plot_el.appendChild(curve_el);
+    }
+  }
+
   for (auto& it : curveList())
   {
+    if (_compare_mode)
+    {
+      break;
+    }
     auto& name = it.src_name;
     QwtPlotCurve* curve = it.curve;
     QDomElement curve_el = doc.createElement("curve");
@@ -915,7 +1013,7 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
   std::set<std::string> added_curve_names;
 
   QString mode = plot_widget.attribute("mode");
-  setModeXY(mode == "XYPlot");
+  setModeXY(mode == "XYPlot" && !_compare_mode);
 
   _flip_x->setChecked(plot_widget.attribute("flip_x") == "true");
   _flip_y->setChecked(plot_widget.attribute("flip_y") == "true");
@@ -979,6 +1077,7 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
     it.marker->detach();
   }
   curveList().clear();
+  _compare_signals.clear();
 
   // insert curves
   QStringList missing_curves;
@@ -1005,7 +1104,7 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
       else
       {
         auto curve_info = addCurve(curve_name_std, color);
-        if (!curve_info)
+        if (!curve_info || _compare_mode)
         {
           continue;
         }
@@ -1036,7 +1135,7 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
       }
     }
     //-----------------
-    if (is_merged_xy)
+    if (is_merged_xy && !_compare_mode)
     {
       std::string curve_x = curve_element.attribute("curve_x").toStdString();
       std::string curve_y = curve_element.attribute("curve_y").toStdString();
@@ -1284,6 +1383,10 @@ void PlotWidget::reloadPlotData()
       {
         ts->updateCache(true);
       }
+      else if (auto run_ts = dynamic_cast<RunWindowTimeseries*>(it.curve->data()))
+      {
+        run_ts->updateCache(true);
+      }
     }
   }
 
@@ -1325,6 +1428,10 @@ bool PlotWidget::isTrackerEnabled() const
 
 void PlotWidget::setTrackerPosition(double abs_time)
 {
+  if (_compare_mode)
+  {
+    return;  // a Compare tab drives its own tracker in run-relative time
+  }
   if (isXYPlot())
   {
     for (auto& it : curveList())
@@ -1348,6 +1455,10 @@ void PlotWidget::setTrackerPosition(double abs_time)
 
 void PlotWidget::on_changeTimeOffset(double offset)
 {
+  if (_compare_mode)
+  {
+    offset = 0.0;
+  }
   auto prev_offset = _time_offset;
   _time_offset = offset;
   // move the trackers
@@ -1580,6 +1691,10 @@ void PlotWidget::changeDots(bool force_dots)
 {
   setDefaultStyle(force_dots ? CurveStyle::LINES_AND_DOTS : CurveStyle::LINES);
   updateCurvesStyle();
+  if (_compare_mode)
+  {
+    applyCompareStyling();
+  }
 }
 
 void PlotWidget::on_changeCurveColor(const QString& curve_name, QColor new_color)
@@ -1675,6 +1790,10 @@ void PlotWidget::onReferenceLineChecked(bool checked, double reference_value)
   if (isXYPlot())
   {
     return;
+  }
+  if (_compare_mode)
+  {
+    checked = false;  // the reference point is an absolute time
   }
 
   if (checked)
@@ -1804,6 +1923,7 @@ void PlotWidget::setModeXY(bool enable)
   magnifier()->setDefaultMode(enable ? PlotMagnifier::BOTH_AXES : PlotMagnifier::X_AXIS);
 
   enableTracker(!enable);
+  _run_band_item->setVisible(!enable && !_compare_mode);
 
   if (enable)
   {
@@ -2109,7 +2229,14 @@ bool PlotWidget::canvasEventFilter(QEvent* event)
         {
           QPointF pointF(qwtPlot()->invTransform(QwtPlot::xBottom, press_point.x()),
                          qwtPlot()->invTransform(QwtPlot::yLeft, press_point.y()));
-          emit trackerMoved(pointF);
+          if (_compare_mode)
+          {
+            emit localTrackerMoved(pointF.x());
+          }
+          else
+          {
+            emit trackerMoved(pointF);
+          }
           return true;  // don't pass to canvas().
         }
         return false;  // send to canvas()
@@ -2223,7 +2350,14 @@ bool PlotWidget::canvasEventFilter(QEvent* event)
 
       if (mouse_event->buttons() == Qt::LeftButton && mouse_event->modifiers() == Qt::ShiftModifier)
       {
-        emit trackerMoved(pointF);
+        if (_compare_mode)
+        {
+          emit localTrackerMoved(pointF.x());
+        }
+        else
+        {
+          emit trackerMoved(pointF);
+        }
         return true;
       }
       showPointValues(point);
@@ -2307,4 +2441,136 @@ QwtSeriesWrapper* PlotWidget::createTimeSeries(const PlotData* data, const QStri
   output->setTimeOffset(_time_offset);
   output->updateCache(true);
   return output;
+}
+
+void PlotWidget::setCompareMode(bool enable)
+{
+  if (_compare_mode == enable)
+  {
+    return;
+  }
+  removeAllCurves();
+  _compare_mode = enable;
+  _run_band_item->setVisible(!enable && !isXYPlot());
+  on_changeTimeOffset(0.0);
+  updateCompareFooter();
+  replot();
+}
+
+void PlotWidget::updateCompareFooter()
+{
+  if (!_compare_mode)
+  {
+    qwtPlot()->setFooter("");
+    return;
+  }
+  QwtText footer(RunSet::instance().includedRuns().empty() ?
+                     tr("Compare: no included runs. Use Mark Start / Mark End in the Runs panel") :
+                     tr("Compare: seconds since run start"));
+  QFont font_footer;
+  font_footer.setPointSize(9);
+  footer.setFont(font_footer);
+  qwtPlot()->setFooter(footer);
+}
+
+void PlotWidget::setLocalTrackerPosition(double plot_x)
+{
+  if (!isXYPlot())
+  {
+    _tracker->setPosition(QPointF(plot_x, 0.0));
+  }
+}
+
+void PlotWidget::clearCurvesSilently()
+{
+  for (auto& it : curveList())
+  {
+    it.curve->detach();
+    delete it.curve;
+    it.marker->detach();
+    delete it.marker;
+  }
+  curveList().clear();
+}
+
+void PlotWidget::rebuildCompareCurves()
+{
+  clearCurvesSilently();
+
+  const auto runs = RunSet::instance().includedRuns();
+  const auto style = overriddenCurvesStyle().value_or(defaultCurveStyle());
+
+  for (const auto& signal : _compare_signals)
+  {
+    auto data_it = _mapped_data.numeric.find(signal);
+    if (data_it == _mapped_data.numeric.end())
+    {
+      continue;
+    }
+    const QString signal_name = QString::fromStdString(signal);
+
+    for (const auto& run : runs)
+    {
+      auto curve = new QwtPlotCurve(QString("%1 [%2]").arg(signal_name, run.name));
+      curve->setPaintAttribute(QwtPlotCurve::ClipPolygons, true);
+      curve->setPaintAttribute(QwtPlotCurve::FilterPointsAggressive, true);
+      curve->setData(new RunWindowTimeseries(&data_it->second, run.t_start, run.t_end));
+      curve->setPen(run.color);
+      setStyle(curve, style);
+      curve->setRenderHint(QwtPlotItem::RenderAntialiased, true);
+      curve->setYAxis(QwtPlot::yLeft);
+      // Line icons, wide enough to tell solid (first signal) from dashed (later signals).
+      curve->setLegendAttribute(QwtPlotCurve::LegendShowLine, true);
+      curve->setLegendIconSize(QSize(24, 10));
+      curve->attach(qwtPlot());
+
+      auto marker = new QwtPlotMarker;
+      marker->attach(qwtPlot());
+      marker->setVisible(false);
+      marker->setSymbol(new QwtSymbol(QwtSymbol::Ellipse, Qt::red, QPen(Qt::black), QSize(8, 8)));
+
+      CurveInfo info;
+      info.src_name = signal;
+      info.curve = curve;
+      info.marker = marker;
+      info.y_axis = QwtPlot::yLeft;
+      info.run_id = run.id;
+      curveList().push_back(info);
+    }
+  }
+
+  applyCompareStyling();
+  updateRightAxisVisibility();
+  updateMaximumZoomArea();
+  _tracker->redraw();
+  _reference_tracker->redraw();
+}
+
+void PlotWidget::applyCompareStyling()
+{
+  const auto style = overriddenCurvesStyle().value_or(defaultCurveStyle());
+  const double base_width =
+      (style == DOTS) ? dotWidthValue(lineWidth()) : lineWidthValue(lineWidth());
+
+  for (auto& info : curveList())
+  {
+    const Run* run = RunSet::instance().findRun(info.run_id);
+    if (!run)
+    {
+      continue;
+    }
+    const bool first_signal =
+        !_compare_signals.empty() && _compare_signals.front() == info.src_name;
+
+    QColor color = run->color;
+    if (!run->is_reference)
+    {
+      color.setAlpha(170);
+    }
+    QPen pen(color, run->is_reference ? base_width * 1.8 : base_width);
+    pen.setStyle(first_signal ? Qt::SolidLine : Qt::DashLine);
+    info.curve->setPen(pen);
+    info.curve->setZ(run->is_reference ? 25.0 : 20.0);
+  }
+  replot();
 }

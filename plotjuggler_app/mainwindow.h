@@ -34,6 +34,7 @@
 #include "transforms/function_editor.h"
 #include "plugin_manager.h"
 #include "toast_manager.h"
+#include "run_panel.h"
 
 #include "ui_mainwindow.h"
 
@@ -125,6 +126,9 @@ private:
   bool _minimized;
 
   CurveListPanel* _curvelist_widget;
+
+  RunPanel* _run_panel = nullptr;
+  void zoomToRun(double t_start, double t_end);
 
   PlotDataMapRef _mapped_plot_data;
 

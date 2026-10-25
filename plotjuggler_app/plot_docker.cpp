@@ -133,6 +133,11 @@ PlotDocker::PlotDocker(QString name, PlotDataMapRef& datamap, QWidget* parent)
     {
       return;
     }
+    if (_compare_mode)
+    {
+      applyTrackerTime(value);
+      return;
+    }
     _tracker_time = value;
     emit trackerTimeEdited(value);
   });
@@ -153,6 +158,15 @@ PlotDocker::PlotDocker(QString name, PlotDataMapRef& datamap, QWidget* parent)
   };
 
   connect(this, &ads::CDockManager::dockWidgetRemoved, this, CreateFirstWidget);
+
+  // Connected before MainWindow's handler, so the panel knows its mode first.
+  connect(this, &PlotDocker::mapPanelAdded, this, [this](MapDockPanel* panel) {
+    panel->setCompareMode(_compare_mode);
+    if (_compare_mode)
+    {
+      panel->onRunTimeUpdated(_tracker_time);
+    }
+  });
 
   connect(this, &ads::CDockManager::dockAreasAdded, this, &PlotDocker::undoableChange);
 
@@ -238,6 +252,10 @@ QDomElement PlotDocker::xmlSaveState(QDomDocument& doc) const
   QDomElement containers_elem = doc.createElement("Tab");
 
   containers_elem.setAttribute("containers", dockContainers().count());
+  if (_compare_mode)
+  {
+    containers_elem.setAttribute("compare", "true");
+  }
 
   for (CDockContainerWidget* container : dockContainers())
   {
@@ -379,6 +397,21 @@ void PlotDocker::registerPlotWidget(PlotWidget* plot_widget)
     return;
   }
 
+  plot_widget->setCompareMode(_compare_mode);
+  for (int index = 0; index < dockAreaCount(); index++)
+  {
+    auto dock_widget = dynamic_cast<DockWidget*>(dockArea(index)->currentDockWidget());
+    if (dock_widget && dock_widget->plotWidget() == plot_widget)
+    {
+      dock_widget->toolBar()->buttonSplitHorizontal()->setHidden(_compare_mode);
+    }
+  }
+  connect(plot_widget, &PlotWidget::localTrackerMoved, this, [this](double plot_x) {
+    if (_compare_mode)
+    {
+      applyTrackerTime(plot_x);
+    }
+  });
   connect(plot_widget, &PlotWidget::timeViewportEdited, this,
           &PlotDocker::onTimeViewportEdited);
   connect(plot_widget, &PlotWidget::timeseriesCurvesDropped, this,
@@ -410,7 +443,7 @@ void PlotDocker::registerPlotWidget(PlotWidget* plot_widget)
     {
       setTimeViewport(*range, nullptr, false);
     }
-    setTrackerTime(_tracker_time);
+    applyTrackerTime(_tracker_time);
   });
   emit plotWidgetAdded(plot_widget);
 }
@@ -500,12 +533,72 @@ void PlotDocker::refreshTimeViewportAfterDataReload()
 
 void PlotDocker::setTrackerTime(double tracker_time)
 {
+  if (_compare_mode)
+  {
+    return;  // global (absolute) tracker time does not apply to run-relative plots
+  }
+  applyTrackerTime(tracker_time);
+}
+
+void PlotDocker::setCompareMode(bool enable)
+{
+  if (_compare_mode == enable)
+  {
+    return;
+  }
+  _compare_mode = enable;
+  _time_viewport.reset();
+  _tracker_time = 0.0;
+  for (int index = 0; index < plotCount(); index++)
+  {
+    auto dock_widget = dynamic_cast<DockWidget*>(dockArea(index)->currentDockWidget());
+    if (!dock_widget)
+    {
+      continue;
+    }
+    dock_widget->toolBar()->buttonSplitHorizontal()->setHidden(enable);
+    if (auto plot = dock_widget->plotWidget())
+    {
+      plot->setCompareMode(enable);
+    }
+  }
+  for (int index = 0; index < plotCount(); index++)
+  {
+    if (auto panel = mapPanelAt(index))
+    {
+      panel->setCompareMode(enable);
+    }
+  }
+  _time_slider->setToolTip(enable ? tr("Seconds since run start") : tr("Visible time range"));
+  updateTimelineSlider();
+  repositionTimelineSlider();
+}
+
+void PlotDocker::setTimeViewportAbsolute(Range range)
+{
+  if (_compare_mode || !firstTimeSeriesPlot())
+  {
+    return;
+  }
+  const double offset = timeOffset();
+  setTimeViewport({ range.min - offset, range.max - offset }, nullptr, true);
+}
+
+void PlotDocker::applyTrackerTime(double tracker_time)
+{
   _tracker_time = tracker_time;
   for (int index = 0; index < plotCount(); index++)
   {
     if (auto plot = plotAt(index))
     {
-      plot->setTrackerPosition(_tracker_time);
+      if (_compare_mode)
+      {
+        plot->setLocalTrackerPosition(_tracker_time);
+      }
+      else
+      {
+        plot->setTrackerPosition(_tracker_time);
+      }
       plot->replot();
     }
   }
@@ -513,7 +606,14 @@ void PlotDocker::setTrackerTime(double tracker_time)
   {
     if (auto panel = mapPanelAt(index))
     {
-      panel->onTimeUpdated(_tracker_time);
+      if (_compare_mode)
+      {
+        panel->onRunTimeUpdated(_tracker_time);
+      }
+      else
+      {
+        panel->onTimeUpdated(_tracker_time);
+      }
     }
   }
   updateTimelineSlider();
@@ -587,7 +687,13 @@ void PlotDocker::setTimeViewport(Range range, PlotWidget* source, bool emit_chan
   updateTimelineSlider();
   repositionTimelineSlider();
 
-  if (emit_change)
+  if (emit_change && _compare_mode)
+  {
+    _tracker_time = std::clamp(_tracker_time, range.min, range.max);
+    applyTrackerTime(_tracker_time);
+    emit undoableChange();
+  }
+  else if (emit_change)
   {
     const double offset = timeOffset();
     emit timeViewportChanged(range.min + offset, range.max + offset);
@@ -717,6 +823,10 @@ PlotWidget* PlotDocker::firstTimeSeriesPlot() const
 
 double PlotDocker::timeOffset() const
 {
+  if (_compare_mode)
+  {
+    return 0.0;
+  }
   if (auto plot = firstTimeSeriesPlot())
   {
     return plot->timeOffset();

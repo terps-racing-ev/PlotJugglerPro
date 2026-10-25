@@ -33,6 +33,8 @@ public:
 
   PlotDocker* addTab(QString name);
 
+  PlotDocker* addCompareTab();
+
   QDomElement xmlSaveState(QDomDocument& doc) const;
 
   bool xmlLoadState(QDomElement& tabbed_area);
@@ -85,6 +87,7 @@ private:
   QPushButton* _buttonAddTab;
 
   QAction* _action_savePlots;
+  QAction* _action_newCompareTab;
 
   QMenu* _tab_menu;
 

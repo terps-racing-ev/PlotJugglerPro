@@ -92,6 +92,32 @@ instructions unless the task is explicitly to revive that platform.
 - After adding signals or changing layout/axis geometry, refresh shared time axes
   and tracker position so the vertical now line updates immediately.
 
+## Run Compare
+
+- A run (lap) is a manual time window in absolute time, owned by the
+  `RunSet::instance()` singleton (`run_set.h`). Runs are saved as `<runs>` in the
+  layout/undo XML and loaded before tabs.
+- Runs are created only from the Runs panel under the curve tree: `Mark Start` /
+  `Mark End` (or `[` / `]`) at the tracker. Creating a run from the visible range
+  was removed on purpose; do not reintroduce it. Runs are deleted from the
+  table's right-click menu or with the Delete key.
+- Normal time-series plots draw included runs as background bands
+  (`RunBandItem`).
+- A Compare tab is a `PlotDocker` with compare mode set (`compare="true"` on
+  `<Tab>`). Its plots store logical signals and expand each one into one
+  `RunWindowTimeseries` curve per included run, with x in seconds since run start.
+  Only the signals are saved in XML.
+- Compare tabs use a time offset of 0, keep their own tracker and slider, and
+  never drive `MainWindow` tracker time, the global time offset, or map panels
+  in other tabs. XY plots, transforms and the curve editor are not offered there.
+- A map panel in a Compare tab runs in compare mode (`MapDockPanel::setCompareMode`):
+  one marker per included run in the run's color, plus a trail for the reference
+  run only, driven by the tab's run-relative tracker (`onRunTimeUpdated`). It
+  ignores global tracker time.
+- Color identifies a run everywhere. The reference run is drawn thicker and on
+  top. A plot's second and later signals are drawn dashed. Every per-run curve
+  is listed in the legend as `signal [run]`, with a line icon showing its style.
+
 ## Map Panel
 
 - Map is a native dock/split panel in the main plot layout, not a toolbox window.

@@ -91,6 +91,15 @@ public:
   Range currentTimeViewport() const;
   bool hasTimeViewport() const;
 
+  // A Compare tab overlays the included runs in run-relative time. It keeps its
+  // own tracker and slider and never drives the global tracker or time offset.
+  void setCompareMode(bool enable);
+  bool isCompareMode() const
+  {
+    return _compare_mode;
+  }
+  void setTimeViewportAbsolute(Range range);
+
 public slots:
 
   void on_stylesheetChanged(QString theme);
@@ -113,6 +122,7 @@ private:
   void setTimelineSliderReservedHeight(int height);
   PlotWidget* firstTimeSeriesPlot() const;
   double timeOffset() const;
+  void applyTrackerTime(double tracker_time);
 
   void resizeEvent(QResizeEvent* event) override;
 
@@ -125,6 +135,7 @@ private:
   bool _applying_time_viewport = false;
   bool _updating_time_slider = false;
   int _timeline_slider_reserved_height = 0;
+  bool _compare_mode = false;
 
 signals:
 

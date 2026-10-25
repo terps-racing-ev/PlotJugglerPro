@@ -66,6 +66,7 @@ public:
     QwtPlotCurve* curve;
     QwtPlotMarker* marker;
     QwtAxisId y_axis = QwtAxis::YLeft;
+    int run_id = -1;  // >= 0 only for per-run curves in a Compare tab
   };
 
   PlotWidgetBase(QWidget* parent);

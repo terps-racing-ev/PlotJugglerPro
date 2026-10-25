@@ -49,6 +49,7 @@
 #include "mainwindow.h"
 #include "curvelist_panel.h"
 #include "tabbedplotwidget.h"
+#include "run_set.h"
 #include "PlotJuggler/plotdata.h"
 #include "transforms/function_editor.h"
 #include "transforms/lua_custom_function.h"
@@ -336,6 +337,25 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
 
   ui->tabsFrame->layout()->addWidget(_main_tabbed_widget);
   ui->leftLayout->addWidget(_curvelist_widget, 1);
+
+  RunPanel::Callbacks run_callbacks;
+  run_callbacks.tracker_time = [this]() { return _tracker_time; };
+  run_callbacks.time_offset = [this]() { return _time_offset.get(); };
+  _run_panel = new RunPanel(run_callbacks, this);
+  ui->leftLayout->addWidget(_run_panel, 0);
+
+  connect(_run_panel, &RunPanel::undoableChange, this, &MainWindow::onUndoableChange);
+  connect(_run_panel, &RunPanel::zoomToRunRequested, this, &MainWindow::zoomToRun);
+  connect(_run_panel, &RunPanel::compareRequested, this, [this]() {
+    _main_tabbed_widget->addCompareTab();
+    onUndoableChange();
+  });
+  connect(&_time_offset, &MonitoredValue::valueChanged, _run_panel, &RunPanel::refresh);
+
+  auto mark_in_shortcut = new QShortcut(QKeySequence(Qt::Key_BracketLeft), this);
+  connect(mark_in_shortcut, &QShortcut::activated, _run_panel, &RunPanel::markIn);
+  auto mark_out_shortcut = new QShortcut(QKeySequence(Qt::Key_BracketRight), this);
+  connect(mark_out_shortcut, &QShortcut::activated, _run_panel, &RunPanel::markOut);
 
   ui->mainSplitter->setCollapsible(0, true);
   ui->mainSplitter->setStretchFactor(0, 2);
@@ -1068,7 +1088,32 @@ QDomDocument MainWindow::xmlSaveState() const
   relative_time.setAttribute("enabled", ui->buttonRemoveTimeOffset->isChecked());
   root.appendChild(relative_time);
 
+  root.appendChild(RunSet::instance().xmlSaveState(doc));
+
   return doc;
+}
+
+void MainWindow::zoomToRun(double t_start, double t_end)
+{
+  auto tabs = _main_tabbed_widget->tabWidget();
+  auto docker = _main_tabbed_widget->currentTab();
+  if (docker && docker->isCompareMode())
+  {
+    docker = nullptr;
+    for (int t = 0; t < tabs->count() && !docker; t++)
+    {
+      auto candidate = dynamic_cast<PlotDocker*>(tabs->widget(t));
+      if (candidate && !candidate->isCompareMode() && candidate->hasTimeViewport())
+      {
+        docker = candidate;
+        tabs->setCurrentWidget(candidate);
+      }
+    }
+  }
+  if (docker)
+  {
+    docker->setTimeViewportAbsolute({ t_start, t_end });
+  }
 }
 
 void MainWindow::checkAllCurvesFromLayout(const QDomElement& root)
@@ -1186,6 +1231,13 @@ bool MainWindow::xmlLoadState(QDomDocument state_document)
   //-----------------------------------------------------
   checkAllCurvesFromLayout(root);
   //-----------------------------------------------------
+
+  // Runs are loaded before the tabs so Compare tabs can build their curves.
+  QDomElement runs_element = root.firstChildElement("runs");
+  if (!runs_element.isNull())
+  {
+    RunSet::instance().xmlLoadState(runs_element);
+  }
 
   for (QDomElement tw = root.firstChildElement("tabbed_widget"); tw.isNull() == false;
        tw = tw.nextSiblingElement("tabbed_widget"))
@@ -2357,6 +2409,10 @@ std::tuple<double, double, int> MainWindow::calculateVisibleRangeX()
   int max_steps = 0;
 
   forEachWidget([&](const PlotWidget* widget) {
+    if (widget->isCompareMode())
+    {
+      return;  // run-relative curves must not influence the absolute time range
+    }
     for (auto& it : widget->curveList())
     {
       const auto& curve_name = it.src_name;

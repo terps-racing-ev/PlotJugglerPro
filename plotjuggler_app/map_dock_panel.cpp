@@ -14,6 +14,7 @@
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QJsonValue>
 #include <QLabel>
 #include <QMenu>
@@ -26,6 +27,7 @@
 #include <QVBoxLayout>
 
 #include "PlotJuggler/svg_util.h"
+#include "run_set.h"
 
 #ifndef PJ_HAS_WEBENGINE
 #define PJ_HAS_WEBENGINE 0
@@ -151,6 +153,7 @@ MapDockPanel::MapDockPanel(PJ::PlotDataMapRef& plot_data, QWidget* parent)
       setStatus("Map initialization failed");
       return;
     }
+    applyCompareModeToMap();
     _route_dirty = true;
     updateRouteOnMap();
     if (_has_time)
@@ -162,6 +165,14 @@ MapDockPanel::MapDockPanel(PJ::PlotDataMapRef& plot_data, QWidget* parent)
 #else
   setStatus("Qt WebEngine not available in this build");
 #endif
+
+  connect(&RunSet::instance(), &RunSet::runsChanged, this, [this]() {
+    if (_compare_mode)
+    {
+      _route_dirty = true;
+      updateRouteOnMap();
+    }
+  });
 
   refreshCurveCombos();
   updateTrailLengthLabel();
@@ -205,8 +216,40 @@ bool MapDockPanel::xmlLoadState(const QDomElement& element)
   return true;
 }
 
+void MapDockPanel::setCompareMode(bool enable)
+{
+  if (_compare_mode == enable)
+  {
+    return;
+  }
+  _compare_mode = enable;
+  // Absolute and run-relative times are not interchangeable.
+  _has_time = false;
+  _last_time = 0.0;
+  applyCompareModeToMap();
+  selectionChanged();
+}
+
+void MapDockPanel::onRunTimeUpdated(double run_time)
+{
+  if (!_compare_mode)
+  {
+    return;
+  }
+  _has_time = true;
+  _last_time = run_time;
+  _route_dirty = true;
+#if PJ_HAS_WEBENGINE
+  updateRouteOnMap();
+#endif
+}
+
 void MapDockPanel::onTimeUpdated(double absolute_time)
 {
+  if (_compare_mode)
+  {
+    return;
+  }
   _has_time = true;
   _last_time = absolute_time;
   _route_dirty = true;
@@ -368,13 +411,17 @@ void MapDockPanel::showContextMenu(const QPoint& pos)
   menu.addSeparator();
   auto* split_v_action = menu.addAction("Add Time-Series Chart");
   auto* split_map_action = menu.addAction("Add Map View");
-  auto* split_h_action = menu.addAction("Add X/Y Panel");
+  // Compare tabs do not offer XY plots.
+  auto* split_h_action = _compare_mode ? nullptr : menu.addAction("Add X/Y Panel");
 
   {
     QSettings settings;
     const QString theme = settings.value("StyleSheet::theme", "light").toString();
     fit_action->setIcon(LoadSvg(":/resources/svg/zoom_max.svg", theme));
-    split_h_action->setIcon(LoadSvg(":/resources/svg/grid.svg", theme));
+    if (split_h_action)
+    {
+      split_h_action->setIcon(LoadSvg(":/resources/svg/grid.svg", theme));
+    }
     split_v_action->setIcon(LoadSvg(":/resources/svg/colored_charts.svg", theme));
     split_map_action->setIcon(LoadSvg(":/resources/svg/scatter.svg", theme));
   }
@@ -399,7 +446,7 @@ void MapDockPanel::showContextMenu(const QPoint& pos)
     return;
   }
 
-  if (selected_action == split_h_action)
+  if (split_h_action && selected_action == split_h_action)
   {
     QMetaObject::invokeMethod(dock, "splitHorizontal");
   }
@@ -454,6 +501,11 @@ void MapDockPanel::updateRouteOnMap()
 #if PJ_HAS_WEBENGINE
   if (!_map_ready || !_web_view)
   {
+    return;
+  }
+  if (_compare_mode)
+  {
+    updateRunsOnMap();
     return;
   }
 
@@ -536,6 +588,10 @@ void MapDockPanel::updateMarkerOnMap(double absolute_time)
   {
     updateRouteOnMap();
   }
+  if (_compare_mode)
+  {
+    return;  // updateRunsOnMap() draws the per-run markers
+  }
 
   const PJ::PlotData* lat_series = nullptr;
   const PJ::PlotData* lon_series = nullptr;
@@ -569,6 +625,122 @@ void MapDockPanel::updateMarkerOnMap(double absolute_time)
                          .arg(QString::number(lon_pt.y, 'g', 16));
 
   _web_view->page()->runJavaScript(js);
+#endif
+}
+
+void MapDockPanel::applyCompareModeToMap()
+{
+#if PJ_HAS_WEBENGINE
+  if (_map_ready && _web_view)
+  {
+    _web_view->page()->runJavaScript(
+        QString("window.pj_setCompareMode(%1);").arg(_compare_mode ? "true" : "false"));
+  }
+#endif
+}
+
+void MapDockPanel::updateRunsOnMap()
+{
+#if PJ_HAS_WEBENGINE
+  if (!_map_ready || !_web_view)
+  {
+    return;
+  }
+
+  const PJ::PlotData* lat_series = nullptr;
+  const PJ::PlotData* lon_series = nullptr;
+  if (!selectedSeries(lat_series, lon_series))
+  {
+    setStatus("Select valid latitude/longitude series");
+    _web_view->page()->runJavaScript("window.pj_setRuns([], false, []);");
+    return;
+  }
+
+  auto valid = [](double lat, double lon) {
+    return std::isfinite(lat) && std::isfinite(lon) && lat >= -90.0 && lat <= 90.0 &&
+           lon >= -180.0 && lon <= 180.0;
+  };
+
+  const auto runs = RunSet::instance().includedRuns();
+  const auto sample_count = std::min(lat_series->size(), lon_series->size());
+  const int trail_length_sec = _trail_length_slider->value();
+
+  // Only the reference run draws a trail; every run gets a marker. The view fits
+  // the reference run, or all runs when the reference is not included.
+  const bool reference_included =
+      std::any_of(runs.begin(), runs.end(), [](const Run& run) { return run.is_reference; });
+
+  QJsonArray runs_json;
+  QJsonArray fit_points;
+  for (const auto& run : runs)
+  {
+    // The tracker is in seconds since run start; hold the marker at the run's ends.
+    const double now =
+        _has_time ? std::clamp(run.t_start + _last_time, run.t_start, run.t_end) : run.t_end;
+    const double trail_start = (_has_time && trail_length_sec > 0) ?
+                                   now - static_cast<double>(trail_length_sec) :
+                                   run.t_start;
+    const bool draw_trail = run.is_reference;
+    const bool fit_run = run.is_reference || !reference_included;
+
+    QJsonArray points;
+    const int first = std::max(0, lat_series->getIndexFromX(run.t_start));
+    for (size_t i = static_cast<size_t>(first); (draw_trail || fit_run) && i < sample_count; i++)
+    {
+      const auto& lat_pt = (*lat_series)[i];
+      const auto& lon_pt = (*lon_series)[i];
+      const double point_time = std::max(lat_pt.x, lon_pt.x);
+      if (point_time > run.t_end)
+      {
+        break;
+      }
+      if (point_time < run.t_start || !valid(lat_pt.y, lon_pt.y))
+      {
+        continue;
+      }
+      QJsonArray ll;
+      ll.append(lat_pt.y);
+      ll.append(lon_pt.y);
+      if (fit_run)
+      {
+        fit_points.append(ll);
+      }
+      if (draw_trail && point_time >= trail_start && point_time <= now)
+      {
+        points.append(ll);
+      }
+    }
+
+    QJsonObject run_json;
+    run_json["color"] = run.color.name();
+    run_json["ref"] = run.is_reference;
+    run_json["points"] = points;
+
+    const int idx_lat = lat_series->getIndexFromX(now);
+    const int idx_lon = lon_series->getIndexFromX(now);
+    if (idx_lat >= 0 && idx_lon >= 0)
+    {
+      const double lat = (*lat_series)[idx_lat].y;
+      const double lon = (*lon_series)[idx_lon].y;
+      if (valid(lat, lon))
+      {
+        run_json["pos"] = QJsonArray{ lat, lon };
+      }
+    }
+    runs_json.append(run_json);
+  }
+
+  setStatus(runs.empty() ? QString("No included runs") :
+                           QString("%1 run(s), colored as in the Runs panel").arg(runs.size()));
+
+  const QString js =
+      QString("window.pj_setRuns(%1, %2, %3);")
+          .arg(QString::fromUtf8(QJsonDocument(runs_json).toJson(QJsonDocument::Compact)))
+          .arg(_fit_route_once ? "true" : "false")
+          .arg(QString::fromUtf8(QJsonDocument(fit_points).toJson(QJsonDocument::Compact)));
+  _web_view->page()->runJavaScript(js);
+  _fit_route_once = false;
+  _route_dirty = false;
 #endif
 }
 
@@ -632,6 +804,9 @@ QString MapDockPanel::mapHtml()
   const QString tile_url_js = escape_js(tile_url);
   const QString tile_attr_js = escape_js(tile_attr);
   const QString tile_max_zoom_js = QString::number(tile_max_zoom);
+  // Allow zooming past the provider's last native level; Leaflet upscales the
+  // deepest available tiles instead of requesting missing ones.
+  const QString view_max_zoom_js = QString::number(std::max(tile_max_zoom, 21));
 
   return QString(R"HTML(
 <!doctype html>
@@ -652,17 +827,19 @@ QString MapDockPanel::mapHtml()
     let pjRoute = null;
     let pjMarker = null;
     let pjFitPoints = [];
+    let pjRunLayer = null;
 
     function ensureMap() {
       if (pjMap) {
         return;
       }
-      pjMap = L.map('map', { preferCanvas: true, maxZoom: %3 }).setView([0, 0], 2);
+      pjMap = L.map('map', { preferCanvas: true, maxZoom: %4 }).setView([0, 0], 2);
       const tileUrl = '%1';
       const tileAttribution = '%2';
       if (tileUrl && tileUrl.length > 0) {
         L.tileLayer(tileUrl, {
-          maxZoom: %3,
+          maxNativeZoom: %3,
+          maxZoom: %4,
           attribution: tileAttribution
         }).addTo(pjMap);
       }
@@ -679,6 +856,49 @@ QString MapDockPanel::mapHtml()
         fillOpacity: 0.95
       }).addTo(pjMap);
       pjMarker.bringToFront();
+      pjRunLayer = L.layerGroup().addTo(pjMap);
+    }
+
+    window.pj_setCompareMode = function(enabled) {
+      ensureMap();
+      if (enabled) {
+        pjRoute.setLatLngs([]);
+        pjMarker.remove();
+      } else {
+        pjRunLayer.clearLayers();
+        pjMarker.addTo(pjMap);
+      }
+    }
+
+    // runs: [{color, ref, points: [[lat, lon], ...], pos: [lat, lon]}]
+    window.pj_setRuns = function(runs, fitBounds, fitPoints) {
+      ensureMap();
+      pjRunLayer.clearLayers();
+      const ordered = (runs || []).slice().sort((a, b) => (a.ref ? 1 : 0) - (b.ref ? 1 : 0));
+      for (const run of ordered) {
+        if (run.points && run.points.length > 0) {
+          L.polyline(run.points, {
+            color: run.color,
+            weight: run.ref ? 5 : 3,
+            opacity: run.ref ? 0.95 : 0.75
+          }).addTo(pjRunLayer);
+        }
+      }
+      for (const run of ordered) {
+        if (run.pos) {
+          L.circleMarker(run.pos, {
+            radius: run.ref ? 8 : 6,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: run.color,
+            fillOpacity: 0.95
+          }).addTo(pjRunLayer);
+        }
+      }
+      pjFitPoints = fitPoints || [];
+      if (fitBounds) {
+        window.pj_fitRoute();
+      }
     }
 
     window.pj_setRoute = function(points, fitBounds, fitPoints) {
@@ -715,5 +935,5 @@ QString MapDockPanel::mapHtml()
 </body>
 </html>
   )HTML")
-      .arg(tile_url_js, tile_attr_js, tile_max_zoom_js);
+      .arg(tile_url_js, tile_attr_js, tile_max_zoom_js, view_max_zoom_js);
 }

@@ -70,10 +70,17 @@ TabbedPlotWidget::TabbedPlotWidget(QString name, QMainWindow* mainwindow,
   _action_savePlots = new QAction(tr("&Save plots to file"), this);
   connect(_action_savePlots, &QAction::triggered, this, &TabbedPlotWidget::on_savePlotsToFile);
 
+  _action_newCompareTab = new QAction(tr("New &Compare Tab (overlay runs)"), this);
+  connect(_action_newCompareTab, &QAction::triggered, this, [this]() {
+    addCompareTab();
+    emit undoableChange();
+  });
+
   _tab_menu = new QMenu(this);
   _tab_menu->addSeparator();
   _tab_menu->addAction(_action_savePlots);
   _tab_menu->addSeparator();
+  _tab_menu->addAction(_action_newCompareTab);
 
   QSettings settings;
   QString theme = settings.value("StyleSheet::theme", "light").toString();
@@ -174,6 +181,14 @@ PlotDocker* TabbedPlotWidget::addTab(QString tab_name)
   return docker;
 }
 
+PlotDocker* TabbedPlotWidget::addCompareTab()
+{
+  static int compare_suffix_count = 1;
+  auto docker = addTab(QString("Compare%1").arg(compare_suffix_count++));
+  docker->setCompareMode(true);
+  return docker;
+}
+
 QDomElement TabbedPlotWidget::xmlSaveState(QDomDocument& doc) const
 {
   QDomElement tabbed_area = doc.createElement("tabbed_widget");
@@ -206,6 +221,7 @@ bool TabbedPlotWidget::xmlLoadState(QDomElement& tabbed_area)
   {
     QString tab_name = docker_elem.attribute("tab_name");
     PlotDocker* docker = addTab(tab_name);
+    docker->setCompareMode(docker_elem.attribute("compare") == "true");
 
     bool success = docker->xmlLoadState(docker_elem);
 

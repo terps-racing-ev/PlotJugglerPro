@@ -65,6 +65,9 @@ set(PLOTJUGGLER_SRC
     point_series_xy.cpp
     # plotzoomer.cpp
     plot_background.cpp
+    run_panel.cpp
+    run_plot_items.cpp
+    run_set.cpp
     statistics_dialog.cpp
     suggest_dialog.cpp
     # timeseries_qwt.cpp

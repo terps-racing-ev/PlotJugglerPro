@@ -34,6 +34,7 @@
 #include "transforms/custom_function.h"
 
 #include "plot_background.h"
+#include "run_plot_items.h"
 
 class StatisticsDialog;
 class DockWidget;
@@ -103,6 +104,19 @@ public:
   void applyTimeViewport(Range range, bool do_replot = true);
   QRect canvasRectIn(QWidget* parent) const;
 
+  // Compare mode: each logical signal is drawn once per included run, with x in
+  // seconds since run start. The global time offset and tracker are ignored.
+  void setCompareMode(bool enable);
+  bool isCompareMode() const
+  {
+    return _compare_mode;
+  }
+  const std::vector<std::string>& compareSignals() const
+  {
+    return _compare_signals;
+  }
+  void setLocalTrackerPosition(double plot_x);
+
 protected:
   PlotDataMapRef& _mapped_data;
 
@@ -121,6 +135,7 @@ signals:
   void createMapSplitRequested();
   void convertToMapPanelRequested();
   void trackerMoved(QPointF pos);
+  void localTrackerMoved(double plot_x);
   void curveListChanged();
   void curvesDropped();
   void splitHorizontal();
@@ -226,6 +241,14 @@ private:
   QString _statistics_window_title = "";
 
   std::unique_ptr<BackgroundColorItem> _background_item;
+  RunBandItem* _run_band_item = nullptr;
+
+  bool _compare_mode = false;
+  std::vector<std::string> _compare_signals;
+  void rebuildCompareCurves();
+  void applyCompareStyling();
+  void clearCurvesSilently();
+  void updateCompareFooter();
 
   bool _use_date_time_scale;
 

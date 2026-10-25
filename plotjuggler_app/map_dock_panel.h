@@ -25,7 +25,14 @@ class MapDockPanel : public QWidget
 public:
   explicit MapDockPanel(PJ::PlotDataMapRef& plot_data, QWidget* parent = nullptr);
 
+  // Global tracker time. Ignored in compare mode.
   void onTimeUpdated(double absolute_time);
+
+  // Compare mode draws one marker per included run, colored like the run, plus
+  // the reference run's trail, driven by the Compare tab's tracker in seconds
+  // since run start.
+  void setCompareMode(bool enable);
+  void onRunTimeUpdated(double run_time);
   void loadDetectedCurves();
   void refreshCurveCombos();
   void refreshAfterDataReload();
@@ -44,6 +51,8 @@ private:
   void updateTrailLengthLabel();
   void updateRouteOnMap();
   void updateMarkerOnMap(double absolute_time);
+  void updateRunsOnMap();
+  void applyCompareModeToMap();
   void zoomToRoute();
   void showContextMenu(const QPoint& pos);
   bool selectedSeries(const PJ::PlotData*& lat_series, const PJ::PlotData*& lon_series) const;
@@ -66,6 +75,7 @@ private:
   bool _route_dirty = true;
   bool _fit_route_once = true;
   bool _has_time = false;
+  bool _compare_mode = false;
   double _last_time = 0.0;
 };
 

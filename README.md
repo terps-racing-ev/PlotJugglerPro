@@ -22,12 +22,22 @@ as museum pieces.
 
 ## Build
 
-The verified build path is local Windows:
+The maintained local build paths are Windows and native Apple Silicon macOS.
+Windows:
 
 ```powershell
 cmake --preset windows-vs2022-pro
 cmake --build build\PlotJugglerPro --config Release --target install
 .\install\bin\plotjuggler.exe
+```
+
+macOS Apple Silicon:
+
+```sh
+brew install cmake qt@5
+cmake --preset macos-arm64-pro
+cmake --build --preset macos-arm64-pro-release-install
+./install/macos-arm64/bin/plotjuggler
 ```
 
 The release installer path is:
@@ -53,13 +63,14 @@ See:
 
 ## Platform Policy
 
-Supported now:
+Maintained local builds:
 
 - Windows local build and installer
+- Native macOS Apple Silicon local build
 
-Planned:
+Not packaged yet:
 
-- Native macOS app/DMG
+- macOS `.app` bundle/DMG
 
 Not maintained for this branch:
 

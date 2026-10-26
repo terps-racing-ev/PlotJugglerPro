@@ -1,9 +1,12 @@
 # PlotJugglerPro Local Build
 
-This document describes the verified local Windows workflow. Other inherited
-upstream build paths are not maintained for this branch.
+This document describes the local Windows workflow and native Apple Silicon
+macOS build. Other inherited upstream build paths are not maintained for this
+branch.
 
 ## Requirements
+
+### Windows
 
 - Visual Studio 2022
 - CMake
@@ -11,7 +14,24 @@ upstream build paths are not maintained for this branch.
 - Qt 5.15.2 at `C:\Qt\5.15.2\msvc2019_64`
 - Qt Installer Framework only when creating an installer
 
+### macOS Apple Silicon
+
+- Apple Silicon Mac with Xcode Command Line Tools
+- Homebrew
+- CMake and Qt 5:
+
+```sh
+brew install cmake qt@5
+```
+
+The preset expects Homebrew at `/opt/homebrew` and Qt 5 at
+`/opt/homebrew/opt/qt@5`. It also adds the Command Line Tools SDK's libc++
+headers explicitly, which is needed on systems where the active compiler does
+not find those headers automatically.
+
 ## Configure
+
+### Windows
 
 ```powershell
 cmake --preset windows-vs2022-pro
@@ -52,6 +72,30 @@ cmake --build --preset windows-vs2022-pro-release-install
 `QtWebEngineProcess.exe` must sit beside the installed app for WebEngine map
 support, but it is not launched directly.
 
+### macOS Apple Silicon
+
+Configure and build/install the native arm64 executable and plugins:
+
+```sh
+cmake --preset macos-arm64-pro
+cmake --build --preset macos-arm64-pro-release-install
+```
+
+Run the installed executable:
+
+```sh
+./install/macos-arm64/bin/plotjuggler
+```
+
+For a fast compile check without installing:
+
+```sh
+cmake --build --preset macos-arm64-pro-release --target plotjuggler
+```
+
+This is a local build that links against the Homebrew Qt installation. It does
+not create a relocatable `.app` bundle or DMG.
+
 ## Troubleshooting
 
 If `install\bin\plotjuggler.exe` is running, the install target can fail because
@@ -69,6 +113,27 @@ That failure usually means vcpkg cached a stale Microsoft Store `pwsh.exe`
 version path. The Windows preset pins vcpkg app-local copying to stable Windows
 PowerShell.
 
+If CMake cannot find Qt on Apple Silicon, confirm that Homebrew Qt 5 is
+installed at `/opt/homebrew/opt/qt@5` and rerun the configure preset.
+
+## MF4/MDF Files on macOS
+
+The MF4 loader uses Python 3 and the `asammdf` package. Install it into a
+dedicated virtual environment:
+
+```sh
+python3 -m venv "$HOME/.venvs/plotjuggler-mf4"
+"$HOME/.venvs/plotjuggler-mf4/bin/python" -m pip install --upgrade pip asammdf
+```
+
+Set `PJ_ASAMMDF_PYTHON` to that environment's Python executable before
+launching PlotJuggler:
+
+```sh
+export PJ_ASAMMDF_PYTHON="$HOME/.venvs/plotjuggler-mf4/bin/python"
+./install/macos-arm64/bin/plotjuggler
+```
+
 ## Map Tiles
 
 The app does not default to `tile.openstreetmap.org`. Set a provider before
@@ -79,6 +144,9 @@ $env:PJ_MAP_TILES_URL="https://your.tile.server/{z}/{x}/{y}.png"
 $env:PJ_MAP_ATTRIBUTION="Your attribution text"
 .\install\bin\plotjuggler.exe
 ```
+
+On macOS, set `PJ_MAP_TILES_URL` and `PJ_MAP_ATTRIBUTION` in the shell before
+launching the app.
 
 ## Current Feature Surface
 

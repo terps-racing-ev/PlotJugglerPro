@@ -22,7 +22,11 @@ QString pythonExecutable()
   {
     return QString::fromLocal8Bit(configured);
   }
+#ifdef Q_OS_WIN
   return QStringLiteral("python");
+#else
+  return QStringLiteral("python3");
+#endif
 }
 
 QString metadataBridgeScript()

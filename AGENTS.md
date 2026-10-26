@@ -27,9 +27,9 @@ PlotJugglerPro is a local data-review workflow fork with:
 - deterministic Y-axis/canvas alignment across stacked time-series plots,
 - a per-tab timeline slider aligned under the time-series canvas.
 
-## Supported Build Path
+## Supported Build Paths
 
-The verified build is local Windows:
+Windows local build:
 
 ```powershell
 cmake --preset windows-vs2022-pro
@@ -54,6 +54,20 @@ If MSBuild emits repeated red lines from
 `cmake --preset windows-vs2022-pro`. The preset pins vcpkg's app-local copy step
 to stable Windows PowerShell so Microsoft Store `pwsh.exe` version changes do
 not break generated projects.
+
+Native Apple Silicon macOS build:
+
+```sh
+brew install cmake qt@5
+cmake --preset macos-arm64-pro
+cmake --build --preset macos-arm64-pro-release-install
+./install/macos-arm64/bin/plotjuggler
+```
+
+The macOS preset targets arm64, expects Homebrew at `/opt/homebrew` with Qt 5
+at `/opt/homebrew/opt/qt@5`, and explicitly adds the Command Line Tools SDK
+libc++ headers. It produces a local build, not a relocatable `.app` bundle or
+DMG.
 
 Do not use inherited Snap, AppImage, Nix, Docker, ROS package, or Conan build
 instructions unless the task is explicitly to revive that platform.

@@ -1,16 +1,18 @@
 # PlotJugglerPro Build Matrix
 
-This branch supports one verified build path today:
+653This branch maintains these local build paths:
 
 - Windows 11
 - Visual Studio 2022
 - CMake preset `windows-vs2022-pro`
 - vcpkg at `C:\vcpkg`
 - Qt 5.15.2 at `C:\Qt\5.15.2\msvc2019_64`
+- Native Apple Silicon macOS
+- Homebrew Qt 5 at `/opt/homebrew/opt/qt@5`
+- CMake preset `macos-arm64-pro`
 
-The next intended platform is native macOS. Linux, Snap, AppImage, Nix, Docker,
-ROS package builds, and Conan workflows are upstream inheritance and are not
-currently maintained for PlotJugglerPro.
+Linux, Snap, AppImage, Nix, Docker, ROS package builds, and Conan workflows are
+upstream inheritance and are not currently maintained for PlotJugglerPro.
 
 ## Windows
 
@@ -49,10 +51,41 @@ current local workflow.
 
 ## macOS
 
-macOS is planned but not yet verified for this Pro branch. The likely path is a
-native CMake preset using Homebrew `qt@5`, followed by `macdeployqt` and DMG
-packaging. Treat existing upstream macOS CI or Conan references as stale until
-they are rebuilt around the Pro workflow.
+Install the build tools and Qt:
+
+```sh
+brew install cmake qt@5
+```
+
+Build and install the native arm64 executable and plugins:
+
+```sh
+cmake --preset macos-arm64-pro
+cmake --build --preset macos-arm64-pro-release-install
+./install/macos-arm64/bin/plotjuggler
+```
+
+The preset explicitly targets arm64, uses the Homebrew Qt 5 installation, and
+adds the Command Line Tools SDK libc++ headers explicitly. This produces a
+local build, not a relocatable `.app` bundle or DMG. See
+`PLOTJUGGLER_PRO_BUILD.md` for details.
+
+### MF4/MDF files on macOS
+
+The MF4 loader needs Python 3 with the `asammdf` package. Create a virtual
+environment and install the package:
+
+```sh
+python3 -m venv "$HOME/.venvs/plotjuggler-mf4"
+"$HOME/.venvs/plotjuggler-mf4/bin/python" -m pip install --upgrade pip asammdf
+```
+
+Set the Python executable when launching PlotJuggler:
+
+```sh
+export PJ_ASAMMDF_PYTHON="$HOME/.venvs/plotjuggler-mf4/bin/python"
+./install/macos-arm64/bin/plotjuggler
+```
 
 ## What Not To Use
 

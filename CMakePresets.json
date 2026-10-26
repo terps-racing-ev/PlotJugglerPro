@@ -24,6 +24,21 @@
         "CMAKE_PREFIX_PATH": "C:/Qt/5.15.2/msvc2019_64",
         "Z_VCPKG_POWERSHELL_PATH": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
       }
+    },
+    {
+      "name": "macos-arm64-pro",
+      "displayName": "macOS Apple Silicon PlotJugglerPro",
+      "description": "Configure a native arm64 build with Homebrew Qt 5 and the CLT libc++ headers",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/PlotJugglerPro-macos-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/macos-arm64",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_CXX_FLAGS": "-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qt@5;/opt/homebrew",
+        "Qt5_DIR": "/opt/homebrew/opt/qt@5/lib/cmake/Qt5"
+      }
     }
   ],
   "buildPresets": [
@@ -38,6 +53,19 @@
       "displayName": "Build+Install PlotJugglerPro Release",
       "configurePreset": "windows-vs2022-pro",
       "configuration": "Release",
+      "targets": [
+        "install"
+      ]
+    },
+    {
+      "name": "macos-arm64-pro-release",
+      "displayName": "Build PlotJugglerPro Release (macOS arm64)",
+      "configurePreset": "macos-arm64-pro"
+    },
+    {
+      "name": "macos-arm64-pro-release-install",
+      "displayName": "Build+Install PlotJugglerPro Release (macOS arm64)",
+      "configurePreset": "macos-arm64-pro",
       "targets": [
         "install"
       ]

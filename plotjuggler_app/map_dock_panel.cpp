@@ -12,31 +12,17 @@
 #include <vector>
 
 #include <QHBoxLayout>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonValue>
 #include <QLabel>
 #include <QMenu>
 #include <QPushButton>
 #include <QSizePolicy>
 #include <QSettings>
 #include <QSignalBlocker>
-#include <QTextBrowser>
-#include <QUrl>
 #include <QVBoxLayout>
 
+#include "map_tile_widget.h"
 #include "PlotJuggler/svg_util.h"
 #include "run_set.h"
-
-#ifndef PJ_HAS_WEBENGINE
-#define PJ_HAS_WEBENGINE 0
-#endif
-
-#if PJ_HAS_WEBENGINE
-#include <QWebEnginePage>
-#include <QWebEngineView>
-#endif
 
 namespace
 {
@@ -118,18 +104,30 @@ MapDockPanel::MapDockPanel(PJ::PlotDataMapRef& plot_data, QWidget* parent)
   layout->addLayout(trail_row);
   layout->addWidget(_status_label);
 
-#if PJ_HAS_WEBENGINE
-  _web_view = new QWebEngineView(this);
-  _web_view->setContextMenuPolicy(Qt::CustomContextMenu);
-  _web_view->setHtml(mapHtml(), QUrl("https://www.openstreetmap.org"));
-  connect(_web_view, &QWidget::customContextMenuRequested, this, &MapDockPanel::showContextMenu);
-  layout->addWidget(_web_view, 1);
-#else
-  auto* fallback = new QTextBrowser(this);
-  fallback->setText("Qt WebEngine is not available. Map panel requires Qt5 WebEngineWidgets.");
-  fallback->setReadOnly(true);
-  layout->addWidget(fallback, 1);
-#endif
+  _map_widget = new MapTileWidget(this);
+  QString tile_url = qEnvironmentVariable("PJ_MAP_TILES_URL");
+  QString tile_attribution = qEnvironmentVariable("PJ_MAP_ATTRIBUTION");
+  const bool using_default_tiles = tile_url.isEmpty();
+  if (using_default_tiles)
+  {
+    tile_url = QStringLiteral(
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/"
+        "MapServer/tile/{z}/{y}/{x}");
+  }
+  if (tile_attribution.isEmpty())
+  {
+    tile_attribution = QStringLiteral("USGS The National Map");
+  }
+  int tile_max_zoom = qEnvironmentVariableIntValue("PJ_MAP_MAX_ZOOM");
+  if (tile_max_zoom <= 0)
+  {
+    tile_max_zoom = using_default_tiles ? 16 : 19;
+  }
+  _map_widget->setTileSource(tile_url, tile_attribution, tile_max_zoom,
+                             std::max(tile_max_zoom, 21));
+  connect(_map_widget, &MapTileWidget::contextMenuRequested, this,
+          &MapDockPanel::showContextMenu);
+  layout->addWidget(_map_widget, 1);
 
   connect(_lat_combo, &QComboBox::currentTextChanged, this,
           [this](const QString&) { selectionChanged(); });
@@ -145,26 +143,7 @@ MapDockPanel::MapDockPanel(PJ::PlotDataMapRef& plot_data, QWidget* parent)
     selectionChanged();
   });
 
-#if PJ_HAS_WEBENGINE
-  connect(_web_view, &QWebEngineView::loadFinished, this, [this](bool ok) {
-    _map_ready = ok;
-    if (!ok)
-    {
-      setStatus("Map initialization failed");
-      return;
-    }
-    applyCompareModeToMap();
-    _route_dirty = true;
-    updateRouteOnMap();
-    if (_has_time)
-    {
-      updateMarkerOnMap(_last_time);
-    }
-  });
   setStatus("Select latitude and longitude curves");
-#else
-  setStatus("Qt WebEngine not available in this build");
-#endif
 
   connect(&RunSet::instance(), &RunSet::runsChanged, this, [this]() {
     if (_compare_mode)
@@ -239,9 +218,7 @@ void MapDockPanel::onRunTimeUpdated(double run_time)
   _has_time = true;
   _last_time = run_time;
   _route_dirty = true;
-#if PJ_HAS_WEBENGINE
   updateRouteOnMap();
-#endif
 }
 
 void MapDockPanel::onTimeUpdated(double absolute_time)
@@ -253,9 +230,7 @@ void MapDockPanel::onTimeUpdated(double absolute_time)
   _has_time = true;
   _last_time = absolute_time;
   _route_dirty = true;
-#if PJ_HAS_WEBENGINE
   updateMarkerOnMap(absolute_time);
-#endif
 }
 
 void MapDockPanel::refreshCurveCombos()
@@ -377,30 +352,24 @@ void MapDockPanel::selectionChanged()
 {
   _fit_route_once = true;
   _route_dirty = true;
-#if PJ_HAS_WEBENGINE
   updateRouteOnMap();
   if (_has_time)
   {
     updateMarkerOnMap(_last_time);
   }
-#endif
 }
 
 void MapDockPanel::zoomToRoute()
 {
-#if PJ_HAS_WEBENGINE
-  if (!_map_ready || !_web_view)
+  if (_map_widget)
   {
-    return;
+    _map_widget->fitToRoute();
   }
-  _web_view->page()->runJavaScript("window.pj_fitRoute();");
-#endif
 }
 
 void MapDockPanel::showContextMenu(const QPoint& pos)
 {
-#if PJ_HAS_WEBENGINE
-  if (!_web_view)
+  if (!_map_widget)
   {
     return;
   }
@@ -426,7 +395,7 @@ void MapDockPanel::showContextMenu(const QPoint& pos)
     split_map_action->setIcon(LoadSvg(":/resources/svg/scatter.svg", theme));
   }
 
-  auto* selected_action = menu.exec(_web_view->mapToGlobal(pos));
+  auto* selected_action = menu.exec(_map_widget->mapToGlobal(pos));
   if (!selected_action)
   {
     return;
@@ -458,9 +427,6 @@ void MapDockPanel::showContextMenu(const QPoint& pos)
   {
     QMetaObject::invokeMethod(dock, "createMapPanelSplit");
   }
-#else
-  (void)pos;
-#endif
 }
 
 void MapDockPanel::applyPendingSelection()
@@ -498,8 +464,7 @@ void MapDockPanel::updateTrailLengthLabel()
 
 void MapDockPanel::updateRouteOnMap()
 {
-#if PJ_HAS_WEBENGINE
-  if (!_map_ready || !_web_view)
+  if (!_map_widget)
   {
     return;
   }
@@ -514,15 +479,15 @@ void MapDockPanel::updateRouteOnMap()
   if (!selectedSeries(lat_series, lon_series))
   {
     setStatus("Select valid latitude/longitude series");
-    _web_view->page()->runJavaScript("window.pj_setRoute([], false, []);");
+    _map_widget->setRoute({}, {}, false);
     return;
   }
 
-  QJsonArray points;
-  QJsonArray fit_points;
+  QVector<QPointF> points;
+  QVector<QPointF> fit_points;
   const auto sample_count = std::min(lat_series->size(), lon_series->size());
-  points = QJsonArray();
-  fit_points = QJsonArray();
+  points.reserve(static_cast<int>(sample_count));
+  fit_points.reserve(static_cast<int>(sample_count));
 
   const double max_time =
       _has_time ? _last_time : std::numeric_limits<double>::infinity();
@@ -552,34 +517,23 @@ void MapDockPanel::updateRouteOnMap()
       continue;
     }
 
-    QJsonArray ll;
-    ll.append(lat_pt.y);
-    ll.append(lon_pt.y);
-    fit_points.append(ll);
+    const QPointF lon_lat(lon_pt.y, lat_pt.y);
+    fit_points.push_back(lon_lat);
 
     if (point_time <= max_time && point_time >= min_time)
     {
-      points.append(ll);
+      points.push_back(lon_lat);
     }
   }
 
-  const QJsonDocument route_doc(points);
-  const QJsonDocument fit_doc(fit_points);
-  const QString js = QString("window.pj_setRoute(%1, %2, %3);")
-                         .arg(QString::fromUtf8(route_doc.toJson(QJsonDocument::Compact)))
-                         .arg(_fit_route_once ? "true" : "false")
-                         .arg(QString::fromUtf8(fit_doc.toJson(QJsonDocument::Compact)));
-
-  _web_view->page()->runJavaScript(js);
+  _map_widget->setRoute(points, fit_points, _fit_route_once);
   _fit_route_once = false;
   _route_dirty = false;
-#endif
 }
 
 void MapDockPanel::updateMarkerOnMap(double absolute_time)
 {
-#if PJ_HAS_WEBENGINE
-  if (!_map_ready || !_web_view)
+  if (!_map_widget)
   {
     return;
   }
@@ -597,6 +551,7 @@ void MapDockPanel::updateMarkerOnMap(double absolute_time)
   const PJ::PlotData* lon_series = nullptr;
   if (!selectedSeries(lat_series, lon_series))
   {
+    _map_widget->setMarker({}, false);
     return;
   }
 
@@ -620,29 +575,20 @@ void MapDockPanel::updateMarkerOnMap(double absolute_time)
     return;
   }
 
-  const QString js = QString("window.pj_setPosition(%1, %2);")
-                         .arg(QString::number(lat_pt.y, 'g', 16))
-                         .arg(QString::number(lon_pt.y, 'g', 16));
-
-  _web_view->page()->runJavaScript(js);
-#endif
+  _map_widget->setMarker(QPointF(lon_pt.y, lat_pt.y), true);
 }
 
 void MapDockPanel::applyCompareModeToMap()
 {
-#if PJ_HAS_WEBENGINE
-  if (_map_ready && _web_view)
+  if (_map_widget)
   {
-    _web_view->page()->runJavaScript(
-        QString("window.pj_setCompareMode(%1);").arg(_compare_mode ? "true" : "false"));
+    _map_widget->setCompareMode(_compare_mode);
   }
-#endif
 }
 
 void MapDockPanel::updateRunsOnMap()
 {
-#if PJ_HAS_WEBENGINE
-  if (!_map_ready || !_web_view)
+  if (!_map_widget)
   {
     return;
   }
@@ -652,7 +598,7 @@ void MapDockPanel::updateRunsOnMap()
   if (!selectedSeries(lat_series, lon_series))
   {
     setStatus("Select valid latitude/longitude series");
-    _web_view->page()->runJavaScript("window.pj_setRuns([], false, []);");
+    _map_widget->setRuns({}, {}, false);
     return;
   }
 
@@ -670,8 +616,9 @@ void MapDockPanel::updateRunsOnMap()
   const bool reference_included =
       std::any_of(runs.begin(), runs.end(), [](const Run& run) { return run.is_reference; });
 
-  QJsonArray runs_json;
-  QJsonArray fit_points;
+  QVector<MapTileWidget::RunOverlay> runs_overlay;
+  QVector<QPointF> fit_points;
+  runs_overlay.reserve(static_cast<int>(runs.size()));
   for (const auto& run : runs)
   {
     // The tracker is in seconds since run start; hold the marker at the run's ends.
@@ -683,7 +630,13 @@ void MapDockPanel::updateRunsOnMap()
     const bool draw_trail = run.is_reference;
     const bool fit_run = run.is_reference || !reference_included;
 
-    QJsonArray points;
+    MapTileWidget::RunOverlay overlay;
+    overlay.color = run.color;
+    overlay.reference = run.is_reference;
+    if (draw_trail)
+    {
+      overlay.trail.reserve(static_cast<int>(sample_count));
+    }
     const int first = std::max(0, lat_series->getIndexFromX(run.t_start));
     for (size_t i = static_cast<size_t>(first); (draw_trail || fit_run) && i < sample_count; i++)
     {
@@ -698,23 +651,16 @@ void MapDockPanel::updateRunsOnMap()
       {
         continue;
       }
-      QJsonArray ll;
-      ll.append(lat_pt.y);
-      ll.append(lon_pt.y);
+      const QPointF lon_lat(lon_pt.y, lat_pt.y);
       if (fit_run)
       {
-        fit_points.append(ll);
+        fit_points.push_back(lon_lat);
       }
       if (draw_trail && point_time >= trail_start && point_time <= now)
       {
-        points.append(ll);
+        overlay.trail.push_back(lon_lat);
       }
     }
-
-    QJsonObject run_json;
-    run_json["color"] = run.color.name();
-    run_json["ref"] = run.is_reference;
-    run_json["points"] = points;
 
     const int idx_lat = lat_series->getIndexFromX(now);
     const int idx_lon = lon_series->getIndexFromX(now);
@@ -724,24 +670,19 @@ void MapDockPanel::updateRunsOnMap()
       const double lon = (*lon_series)[idx_lon].y;
       if (valid(lat, lon))
       {
-        run_json["pos"] = QJsonArray{ lat, lon };
+        overlay.position = QPointF(lon, lat);
+        overlay.has_position = true;
       }
     }
-    runs_json.append(run_json);
+    runs_overlay.push_back(std::move(overlay));
   }
 
   setStatus(runs.empty() ? QString("No included runs") :
                            QString("%1 run(s), colored as in the Runs panel").arg(runs.size()));
 
-  const QString js =
-      QString("window.pj_setRuns(%1, %2, %3);")
-          .arg(QString::fromUtf8(QJsonDocument(runs_json).toJson(QJsonDocument::Compact)))
-          .arg(_fit_route_once ? "true" : "false")
-          .arg(QString::fromUtf8(QJsonDocument(fit_points).toJson(QJsonDocument::Compact)));
-  _web_view->page()->runJavaScript(js);
+  _map_widget->setRuns(runs_overlay, fit_points, _fit_route_once);
   _fit_route_once = false;
   _route_dirty = false;
-#endif
 }
 
 bool MapDockPanel::selectedSeries(const PJ::PlotData*& lat_series,
@@ -768,172 +709,4 @@ bool MapDockPanel::selectedSeries(const PJ::PlotData*& lat_series,
 void MapDockPanel::setStatus(const QString& text)
 {
   _status_label->setText(text);
-}
-
-QString MapDockPanel::mapHtml()
-{
-  auto tile_url = qEnvironmentVariable("PJ_MAP_TILES_URL");
-  auto tile_attr = qEnvironmentVariable("PJ_MAP_ATTRIBUTION");
-  bool using_default_tiles = false;
-  int tile_max_zoom = qEnvironmentVariableIntValue("PJ_MAP_MAX_ZOOM");
-
-  if (tile_url.isEmpty())
-  {
-    using_default_tiles = true;
-    tile_url =
-        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/"
-        "MapServer/tile/{z}/{y}/{x}";
-  }
-  if (tile_attr.isEmpty())
-  {
-    tile_attr = "USGS The National Map";
-  }
-  if (tile_max_zoom <= 0)
-  {
-    tile_max_zoom = using_default_tiles ? 16 : 19;
-  }
-
-  auto escape_js = [](QString str) {
-    str.replace('\\', "\\\\");
-    str.replace('\'', "\\'");
-    str.replace('\n', " ");
-    str.replace('\r', " ");
-    return str;
-  };
-
-  const QString tile_url_js = escape_js(tile_url);
-  const QString tile_attr_js = escape_js(tile_attr);
-  const QString tile_max_zoom_js = QString::number(tile_max_zoom);
-  // Allow zooming past the provider's last native level; Leaflet upscales the
-  // deepest available tiles instead of requesting missing ones.
-  const QString view_max_zoom_js = QString::number(std::max(tile_max_zoom, 21));
-
-  return QString(R"HTML(
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    let pjMap = null;
-    let pjRoute = null;
-    let pjMarker = null;
-    let pjFitPoints = [];
-    let pjRunLayer = null;
-
-    function ensureMap() {
-      if (pjMap) {
-        return;
-      }
-      pjMap = L.map('map', { preferCanvas: true, maxZoom: %4 }).setView([0, 0], 2);
-      const tileUrl = '%1';
-      const tileAttribution = '%2';
-      if (tileUrl && tileUrl.length > 0) {
-        L.tileLayer(tileUrl, {
-          maxNativeZoom: %3,
-          maxZoom: %4,
-          attribution: tileAttribution
-        }).addTo(pjMap);
-      }
-      pjRoute = L.polyline([], {
-        color: '#2563eb',
-        weight: 3,
-        opacity: 0.85
-      }).addTo(pjMap);
-      pjMarker = L.circleMarker([0, 0], {
-        radius: 7,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: '#dc2626',
-        fillOpacity: 0.95
-      }).addTo(pjMap);
-      pjMarker.bringToFront();
-      pjRunLayer = L.layerGroup().addTo(pjMap);
-    }
-
-    window.pj_setCompareMode = function(enabled) {
-      ensureMap();
-      if (enabled) {
-        pjRoute.setLatLngs([]);
-        pjMarker.remove();
-      } else {
-        pjRunLayer.clearLayers();
-        pjMarker.addTo(pjMap);
-      }
-    }
-
-    // runs: [{color, ref, points: [[lat, lon], ...], pos: [lat, lon]}]
-    window.pj_setRuns = function(runs, fitBounds, fitPoints) {
-      ensureMap();
-      pjRunLayer.clearLayers();
-      const ordered = (runs || []).slice().sort((a, b) => (a.ref ? 1 : 0) - (b.ref ? 1 : 0));
-      for (const run of ordered) {
-        if (run.points && run.points.length > 0) {
-          L.polyline(run.points, {
-            color: run.color,
-            weight: run.ref ? 5 : 3,
-            opacity: run.ref ? 0.95 : 0.75
-          }).addTo(pjRunLayer);
-        }
-      }
-      for (const run of ordered) {
-        if (run.pos) {
-          L.circleMarker(run.pos, {
-            radius: run.ref ? 8 : 6,
-            color: '#ffffff',
-            weight: 2,
-            fillColor: run.color,
-            fillOpacity: 0.95
-          }).addTo(pjRunLayer);
-        }
-      }
-      pjFitPoints = fitPoints || [];
-      if (fitBounds) {
-        window.pj_fitRoute();
-      }
-    }
-
-    window.pj_setRoute = function(points, fitBounds, fitPoints) {
-      ensureMap();
-      pjRoute.setLatLngs(points || []);
-      pjFitPoints = fitPoints || points || [];
-      pjMarker.bringToFront();
-      if (fitBounds) {
-        window.pj_fitRoute();
-      }
-    }
-
-    window.pj_fitRoute = function() {
-      ensureMap();
-      const pts = pjFitPoints && pjFitPoints.length > 0 ? pjFitPoints : pjRoute.getLatLngs();
-      if (!pts || pts.length === 0) {
-        return;
-      }
-      if (pts.length === 1) {
-        pjMap.setView(pts[0], 16);
-        return;
-      }
-      pjMap.fitBounds(L.latLngBounds(pts), { padding: [20, 20] });
-    }
-
-    window.pj_setPosition = function(lat, lon) {
-      ensureMap();
-      pjMarker.setLatLng([lat, lon]);
-      pjMarker.bringToFront();
-    }
-
-    ensureMap();
-  </script>
-</body>
-</html>
-  )HTML")
-      .arg(tile_url_js, tile_attr_js, tile_max_zoom_js, view_max_zoom_js);
 }

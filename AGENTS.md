@@ -142,8 +142,7 @@ instructions unless the task is explicitly to revive that platform.
 - Latitude/longitude autodetection is intentionally simple: keyword match for
   `Latitude` and `Longitude` only.
 - `Fit to View` refreshes data, runs detection, and fits the route.
-- Right-click inside the map is forwarded to app code; WebEngine's default
-  context menu is suppressed.
+- Right-click inside the native Qt map widget is forwarded to app code.
 - The default packaged map can use USGS The National Map imagery/topo tiles
   because expected usage is small, occasional, and US-focused.
 - Do not default app code to `tile.openstreetmap.org`; configure tiles with

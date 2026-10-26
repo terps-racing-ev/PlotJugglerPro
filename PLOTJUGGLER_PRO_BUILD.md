@@ -69,8 +69,7 @@ cmake --build --preset windows-vs2022-pro-release-install
 .\install\bin\plotjuggler.exe
 ```
 
-`QtWebEngineProcess.exe` must sit beside the installed app for WebEngine map
-support, but it is not launched directly.
+The map panel uses a native Qt widget and does not require Qt WebEngine.
 
 ### macOS Apple Silicon
 

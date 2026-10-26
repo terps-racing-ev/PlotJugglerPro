@@ -16,7 +16,7 @@
 
 #include "PlotJuggler/plotdata.h"
 
-class QWebEngineView;
+class MapTileWidget;
 
 class MapDockPanel : public QWidget
 {
@@ -57,7 +57,6 @@ private:
   void showContextMenu(const QPoint& pos);
   bool selectedSeries(const PJ::PlotData*& lat_series, const PJ::PlotData*& lon_series) const;
   void setStatus(const QString& text);
-  static QString mapHtml();
 
   PJ::PlotDataMapRef& _plot_data;
 
@@ -66,12 +65,11 @@ private:
   QSlider* _trail_length_slider = nullptr;
   QLabel* _trail_length_label = nullptr;
   QLabel* _status_label = nullptr;
-  QWebEngineView* _web_view = nullptr;
+  MapTileWidget* _map_widget = nullptr;
 
   QString _pending_lat_curve;
   QString _pending_lon_curve;
 
-  bool _map_ready = false;
   bool _route_dirty = true;
   bool _fit_route_once = true;
   bool _has_time = false;

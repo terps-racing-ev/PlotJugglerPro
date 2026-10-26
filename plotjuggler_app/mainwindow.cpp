@@ -330,11 +330,7 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
 
   _main_tabbed_widget = new TabbedPlotWidget("Main Window", this, _mapped_plot_data, this);
 
-#if PJ_HAS_WEBENGINE
-  qInfo() << "Plot types available: TimeSeries, XY, MapPanel(WebEngine)";
-#else
-  qInfo() << "Plot types available: TimeSeries, XY, MapPanel(no WebEngine)";
-#endif
+  qInfo() << "Plot types available: TimeSeries, XY, MapPanel(Qt)";
 
   connect(this, &MainWindow::stylesheetChanged, _main_tabbed_widget,
           &TabbedPlotWidget::on_stylesheetChanged);

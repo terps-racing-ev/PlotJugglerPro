@@ -29,8 +29,11 @@
 #include <QMouseEvent>
 #include <QPluginLoader>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QProgressDialog>
 #include <QPushButton>
+#include <QDir>
+#include <QFileInfo>
 #include <QKeySequence>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -87,6 +90,15 @@ QString mf4PythonExecutable()
   {
     return QString::fromLocal8Bit(configured);
   }
+#ifdef Q_OS_MAC
+  const QString bundled_python =
+      QDir::cleanPath(QCoreApplication::applicationDirPath() +
+                      QStringLiteral("/../Resources/MF4Python/bin/python3"));
+  if (QFileInfo::exists(bundled_python))
+  {
+    return bundled_python;
+  }
+#endif
 #ifdef Q_OS_WIN
   return QStringLiteral("python");
 #else
@@ -102,11 +114,29 @@ import sys
 
 try:
     import numpy as np
+except Exception as exc:
+    print(json.dumps({
+        "type": "error",
+        "message": (
+            "The selected Python interpreter '%s' cannot import NumPy: %s\n\n"
+            "Install the MF4 dependencies into this same interpreter with:\n"
+            "\"%s\" -m pip install --upgrade numpy asammdf\n\n"
+            "For the packaged macOS app, clear PJ_ASAMMDF_PYTHON to use its "
+            "bundled Python runtime."
+        ) % (sys.executable, exc, sys.executable)
+    }), flush=True)
+    sys.exit(2)
+
+try:
     from asammdf import MDF
 except Exception as exc:
     print(json.dumps({
         "type": "error",
-        "message": "Python package 'asammdf' is required to load MF4/MDF files: %s" % exc
+        "message": (
+            "The selected Python interpreter '%s' cannot import asammdf: %s\n\n"
+            "Install the MF4 dependencies into this same interpreter with:\n"
+            "\"%s\" -m pip install --upgrade numpy asammdf"
+        ) % (sys.executable, exc, sys.executable)
     }), flush=True)
     sys.exit(2)
 
@@ -679,6 +709,10 @@ void MainWindow::loadAllPlugins(QStringList command_line_plugin_folders)
   plugin_folders += command_line_plugin_folders;
   plugin_folders += settings.value("Preferences::plugin_folders", QStringList()).toStringList();
   builtin_folders += QCoreApplication::applicationDirPath();
+#ifdef Q_OS_MAC
+  builtin_folders += QDir::cleanPath(QCoreApplication::applicationDirPath() +
+                                     "/../PlugIns/plotjuggler");
+#endif
   builtin_folders += PJ_PLUGIN_INSTALL_DIRECTORY;
 
   try
@@ -719,7 +753,18 @@ void MainWindow::loadAllPlugins(QStringList command_line_plugin_folders)
   builtin_folders.removeDuplicates();
   forEachMapPanel([&](MapDockPanel* panel) { panel->onTimeUpdated(_tracker_time); });
 
-  plugin_folders += builtin_folders;
+#ifdef Q_OS_MAC
+  const bool running_from_app_bundle = QFileInfo::exists(
+      QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../Info.plist"));
+  if (running_from_app_bundle)
+  {
+    plugin_folders = builtin_folders + plugin_folders;
+  }
+  else
+#endif
+  {
+    plugin_folders += builtin_folders;
+  }
   plugin_folders.removeDuplicates();
 
   for (const auto& folder : plugin_folders)
@@ -1569,6 +1614,9 @@ bool MainWindow::hydrateLazyMf4Series(const std::string& curve_name, LazyMf4Seri
 
   QProcess process;
   process.setProgram(mf4PythonExecutable());
+  QProcessEnvironment process_environment = QProcessEnvironment::systemEnvironment();
+  process_environment.insert(QStringLiteral("PYTHONDONTWRITEBYTECODE"), QStringLiteral("1"));
+  process.setProcessEnvironment(process_environment);
   process.setArguments({ QStringLiteral("-u"), QStringLiteral("-c"), mf4HydrationScript(),
                          info.filename, QString::number(info.group_index),
                          QString::number(info.channel_index) });

@@ -67,25 +67,51 @@ cmake --build --preset macos-arm64-pro-release-install
 
 The preset explicitly targets arm64, uses the Homebrew Qt 5 installation, and
 adds the Command Line Tools SDK libc++ headers explicitly. This produces a
-local build, not a relocatable `.app` bundle or DMG. See
-`PLOTJUGGLER_PRO_BUILD.md` for details.
+local build. To create a relocatable `.app` bundle and DMG with a free ad-hoc
+signature, run:
 
-### MF4/MDF files on macOS
+```sh
+./tools/package_macos_release.sh
+```
 
-The MF4 loader needs Python 3 with the `asammdf` package. Create a virtual
-environment and install the package:
+The script builds the Release app and plugins, embeds Qt and its platform
+plugins, and writes the DMG under `dist/macos-arm64`. It targets macOS 13 and
+Apple Silicon. Its ad-hoc signature is free and does not require an Apple
+Developer account, but it is not notarized or signed with a developer identity.
+The app bundle uses the existing PlotJuggler SVG artwork for its Finder and Dock
+icon.
+Gatekeeper may block the first launch: use Finder's right-click **Open**
+option, or remove the quarantine attribute from the app after verifying its
+source:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/PlotJugglerPro.app
+```
+
+The release DMG includes a relocatable Python runtime and `asammdf` for MF4
+loading. The packaging machine needs `uv` and network access to build it:
+
+```sh
+brew install uv
+```
+
+`PJ_MF4_PYTHON_VERSION` and `PJ_ASAMMDF_VERSION` can override the Python minor
+version and pinned `asammdf` version used when packaging.
+
+### MF4/MDF files during macOS development
+
+Local builds use `python3` by default. Install `asammdf` in that Python
+environment, or set `PJ_ASAMMDF_PYTHON` to another Python executable:
 
 ```sh
 python3 -m venv "$HOME/.venvs/plotjuggler-mf4"
 "$HOME/.venvs/plotjuggler-mf4/bin/python" -m pip install --upgrade pip asammdf
-```
-
-Set the Python executable when launching PlotJuggler:
-
-```sh
 export PJ_ASAMMDF_PYTHON="$HOME/.venvs/plotjuggler-mf4/bin/python"
 ./install/macos-arm64/bin/plotjuggler
 ```
+
+Packaged apps use their bundled Python automatically; the environment variable
+can still override it for troubleshooting.
 
 ## What Not To Use
 

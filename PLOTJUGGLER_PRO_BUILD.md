@@ -92,8 +92,27 @@ For a fast compile check without installing:
 cmake --build --preset macos-arm64-pro-release --target plotjuggler
 ```
 
-This is a local build that links against the Homebrew Qt installation. It does
-not create a relocatable `.app` bundle or DMG.
+The local executable links against Homebrew Qt. To build a relocatable,
+Apple Silicon release `.app` and DMG with Qt frameworks and plugins bundled,
+run:
+
+```sh
+./tools/package_macos_release.sh
+```
+
+The release is written to `dist/macos-arm64` and targets macOS 13 Ventura or
+newer. It uses a free ad-hoc signature that does not require an Apple Developer
+account; it is not signed with a developer identity or notarized. On first
+launch, Gatekeeper may require right-clicking the app in Finder and choosing
+**Open**, then confirming the prompt.
+
+The release script bundles the MF4 Python runtime and `asammdf`. Install `uv`
+on the packaging Mac and allow network access to fetch the pinned Python and
+package builds:
+
+```sh
+brew install uv
+```
 
 ## Troubleshooting
 
@@ -117,16 +136,15 @@ installed at `/opt/homebrew/opt/qt@5` and rerun the configure preset.
 
 ## MF4/MDF Files on macOS
 
-The MF4 loader uses Python 3 and the `asammdf` package. Install it into a
-dedicated virtual environment:
+The release DMG includes Python and `asammdf`, so MF4 files work without
+additional user setup. Local development builds use `python3` by default;
+install `asammdf` into its environment or set `PJ_ASAMMDF_PYTHON` to choose
+another Python executable:
 
 ```sh
 python3 -m venv "$HOME/.venvs/plotjuggler-mf4"
 "$HOME/.venvs/plotjuggler-mf4/bin/python" -m pip install --upgrade pip asammdf
 ```
-
-Set `PJ_ASAMMDF_PYTHON` to that environment's Python executable before
-launching PlotJuggler:
 
 ```sh
 export PJ_ASAMMDF_PYTHON="$HOME/.venvs/plotjuggler-mf4/bin/python"

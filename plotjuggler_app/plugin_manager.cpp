@@ -34,6 +34,13 @@ void PluginManager::loadPluginsFromFolder(const QString& folderPath)
 
 void PluginManager::loadPlugin(const QString& filename)
 {
+  const QString plugin_file_name = QFileInfo(filename).fileName();
+  if (_loaded_plugins.find(plugin_file_name) != _loaded_plugins.end())
+  {
+    qDebug() << "Skipping duplicate plugin binary:" << filename;
+    return;
+  }
+
   QPluginLoader pluginLoader(filename);
   QObject* plugin = nullptr;
   try
@@ -50,6 +57,10 @@ void PluginManager::loadPlugin(const QString& filename)
   {
     qDebug() << filename << ": " << pluginLoader.errorString();
     return;
+  }
+  if (plugin)
+  {
+    _loaded_plugins.insert(plugin_file_name);
   }
   if (plugin && dynamic_cast<PlotJugglerPlugin*>(plugin))
   {
@@ -108,8 +119,6 @@ void PluginManager::loadPlugin(const QString& filename)
       return;
     }
     qDebug() << message;
-    _loaded_plugins.insert(plugin_name);
-
     if (loader)
     {
       _data_loader.insert(std::make_pair(plugin_name, loader));

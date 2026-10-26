@@ -2,6 +2,9 @@
 
 #include <QApplication>
 #include <QByteArray>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
@@ -22,6 +25,15 @@ QString pythonExecutable()
   {
     return QString::fromLocal8Bit(configured);
   }
+#ifdef Q_OS_MAC
+  const QString bundled_python =
+      QDir::cleanPath(QCoreApplication::applicationDirPath() +
+                      QStringLiteral("/../Resources/MF4Python/bin/python3"));
+  if (QFileInfo::exists(bundled_python))
+  {
+    return bundled_python;
+  }
+#endif
 #ifdef Q_OS_WIN
   return QStringLiteral("python");
 #else
@@ -37,11 +49,29 @@ import sys
 
 try:
     import numpy as np
+except Exception as exc:
+    print(json.dumps({
+        "type": "error",
+        "message": (
+            "The selected Python interpreter '%s' cannot import NumPy: %s\n\n"
+            "Install the MF4 dependencies into this same interpreter with:\n"
+            "\"%s\" -m pip install --upgrade numpy asammdf\n\n"
+            "For the packaged macOS app, clear PJ_ASAMMDF_PYTHON to use its "
+            "bundled Python runtime."
+        ) % (sys.executable, exc, sys.executable)
+    }), flush=True)
+    sys.exit(2)
+
+try:
     from asammdf import MDF
 except Exception as exc:
     print(json.dumps({
         "type": "error",
-        "message": "Python package 'asammdf' is required to load MF4/MDF files: %s" % exc
+        "message": (
+            "The selected Python interpreter '%s' cannot import asammdf: %s\n\n"
+            "Install the MF4 dependencies into this same interpreter with:\n"
+            "\"%s\" -m pip install --upgrade numpy asammdf"
+        ) % (sys.executable, exc, sys.executable)
     }), flush=True)
     sys.exit(2)
 

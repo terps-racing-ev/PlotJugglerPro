@@ -47,7 +47,7 @@ C:\Qt\5.15.2\msvc2019_64\bin\windeployqt.exe
 C:\Qt\Tools\QtInstallerFramework\4.10\bin\binarycreator.exe
 ```
 
-The script also validates key runtime files after `windeployqt`, including `platforms\qwindows.dll`, `QtWebEngineProcess.exe`, and `Qt5WebEngineCore.dll`. It checks key Qt DLLs against the `C:\Qt\5.15.2` copies to catch mixed Qt runtime packages.
+The script also validates key runtime files after `windeployqt`, including `platforms\qwindows.dll`. It checks key Qt DLLs against the `C:\Qt\5.15.2` copies to catch mixed Qt runtime packages.
 
 The installer filename comes from:
 
@@ -149,7 +149,7 @@ The script runs `windeployqt` on `PlotJugglerPro.exe` in:
 installer\io.plotjuggler.application\data
 ```
 
-This pulls in Qt DLLs, plugins, WebEngine files, and related runtime assets needed on users' machines.
+This pulls in Qt DLLs, plugins, and related runtime assets needed on users' machines.
 
 ## 5. Create Offline Installer
 

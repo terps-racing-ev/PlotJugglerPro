@@ -117,7 +117,6 @@ mv -f "$DATA_DIR/plotjuggler.exe" "$DATA_DIR/PlotJugglerPro.exe"
 
 log "Removing pre-existing Qt runtime files before windeployqt..."
 rm -f "$DATA_DIR"/Qt5*.dll
-rm -f "$DATA_DIR"/QtWebEngineProcess.exe
 rm -f "$DATA_DIR"/D3Dcompiler_*.dll "$DATA_DIR"/libEGL.dll "$DATA_DIR"/libGLESv2.dll "$DATA_DIR"/opengl32sw.dll
 rm -rf "$DATA_DIR"/bearer "$DATA_DIR"/iconengines "$DATA_DIR"/imageformats "$DATA_DIR"/platforms
 rm -rf "$DATA_DIR"/position "$DATA_DIR"/printsupport "$DATA_DIR"/resources "$DATA_DIR"/styles "$DATA_DIR"/translations
@@ -161,12 +160,8 @@ require_payload_file "Qt5Core.dll"
 require_payload_file "Qt5Widgets.dll"
 require_payload_file "Qt5Svg.dll"
 require_payload_file "Qt5WebSockets.dll"
-require_payload_file "QtWebEngineProcess.exe"
-require_payload_file "Qt5WebEngineCore.dll"
 require_matching_qt_dll "Qt5Core.dll"
 require_matching_qt_dll "Qt5Gui.dll"
-require_matching_qt_dll "Qt5Quick.dll"
-require_matching_qt_dll "Qt5WebEngineCore.dll"
 log "Runtime validation passed"
 
 log "Creating offline installer. This can take a minute..."

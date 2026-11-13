@@ -1,16 +1,18 @@
 # PlotJugglerPro Build Matrix
 
-This branch supports one verified build path today:
+653This branch maintains these local build paths:
 
 - Windows 11
 - Visual Studio 2022
 - CMake preset `windows-vs2022-pro`
 - vcpkg at `C:\vcpkg`
 - Qt 5.15.2 at `C:\Qt\5.15.2\msvc2019_64`
+- Native Apple Silicon macOS
+- Homebrew Qt 5 at `/opt/homebrew/opt/qt@5`
+- CMake preset `macos-arm64-pro`
 
-The next intended platform is native macOS. Linux, Snap, AppImage, Nix, Docker,
-ROS package builds, and Conan workflows are upstream inheritance and are not
-currently maintained for PlotJugglerPro.
+Linux, Snap, AppImage, Nix, Docker, ROS package builds, and Conan workflows are
+upstream inheritance and are not currently maintained for PlotJugglerPro.
 
 ## Windows
 
@@ -49,10 +51,67 @@ current local workflow.
 
 ## macOS
 
-macOS is planned but not yet verified for this Pro branch. The likely path is a
-native CMake preset using Homebrew `qt@5`, followed by `macdeployqt` and DMG
-packaging. Treat existing upstream macOS CI or Conan references as stale until
-they are rebuilt around the Pro workflow.
+Install the build tools and Qt:
+
+```sh
+brew install cmake qt@5
+```
+
+Build and install the native arm64 executable and plugins:
+
+```sh
+cmake --preset macos-arm64-pro
+cmake --build --preset macos-arm64-pro-release-install
+./install/macos-arm64/bin/plotjuggler
+```
+
+The preset explicitly targets arm64, uses the Homebrew Qt 5 installation, and
+adds the Command Line Tools SDK libc++ headers explicitly. This produces a
+local build. To create a relocatable `.app` bundle and DMG with a free ad-hoc
+signature, run:
+
+```sh
+./tools/package_macos_release.sh
+```
+
+The script builds the Release app and plugins, embeds Qt and its platform
+plugins, and writes the DMG under `dist/macos-arm64`. It targets macOS 13 and
+Apple Silicon. Its ad-hoc signature is free and does not require an Apple
+Developer account, but it is not notarized or signed with a developer identity.
+The app bundle uses the existing PlotJuggler SVG artwork for its Finder and Dock
+icon.
+Gatekeeper may block the first launch: use Finder's right-click **Open**
+option, or remove the quarantine attribute from the app after verifying its
+source:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/PlotJugglerPro.app
+```
+
+The release DMG includes a relocatable Python runtime and `asammdf` for MF4
+loading. The packaging machine needs `uv` and network access to build it:
+
+```sh
+brew install uv
+```
+
+`PJ_MF4_PYTHON_VERSION` and `PJ_ASAMMDF_VERSION` can override the Python minor
+version and pinned `asammdf` version used when packaging.
+
+### MF4/MDF files during macOS development
+
+Local builds use `python3` by default. Install `asammdf` in that Python
+environment, or set `PJ_ASAMMDF_PYTHON` to another Python executable:
+
+```sh
+python3 -m venv "$HOME/.venvs/plotjuggler-mf4"
+"$HOME/.venvs/plotjuggler-mf4/bin/python" -m pip install --upgrade pip asammdf
+export PJ_ASAMMDF_PYTHON="$HOME/.venvs/plotjuggler-mf4/bin/python"
+./install/macos-arm64/bin/plotjuggler
+```
+
+Packaged apps use their bundled Python automatically; the environment variable
+can still override it for troubleshooting.
 
 ## What Not To Use
 

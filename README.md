@@ -12,6 +12,7 @@ as museum pieces.
 ## Current Workflow
 
 - Native dock/split map panels in the main plot layout
+- Native Qt map rendering with USGS tiles, route overlays, and tracker markers
 - Lazy-loading data support, including MF4 work
 - One master time-series column per tab
 - Shared X viewport for all non-XY time-series plots in a tab
@@ -22,12 +23,22 @@ as museum pieces.
 
 ## Build
 
-The verified build path is local Windows:
+The maintained local build paths are Windows and native Apple Silicon macOS.
+Windows:
 
 ```powershell
 cmake --preset windows-vs2022-pro
 cmake --build build\PlotJugglerPro --config Release --target install
 .\install\bin\plotjuggler.exe
+```
+
+macOS Apple Silicon:
+
+```sh
+brew install cmake qt@5
+cmake --preset macos-arm64-pro
+cmake --build --preset macos-arm64-pro-release-install
+./install/macos-arm64/bin/plotjuggler
 ```
 
 The release installer path is:
@@ -53,13 +64,14 @@ See:
 
 ## Platform Policy
 
-Supported now:
+Maintained local builds:
 
 - Windows local build and installer
+- Native macOS Apple Silicon local build
 
-Planned:
+Not packaged yet:
 
-- Native macOS app/DMG
+- macOS `.app` bundle/DMG
 
 Not maintained for this branch:
 

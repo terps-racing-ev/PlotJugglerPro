@@ -23,7 +23,7 @@ echo Using: %WINDEPLOYQT%
 
 REM Deploy for main executable
 echo Processing: PlotJugglerPro.exe
-"%WINDEPLOYQT%" --release --webengine "%DATA_DIR%\PlotJugglerPro.exe"
+"%WINDEPLOYQT%" --release "%DATA_DIR%\PlotJugglerPro.exe"
 if errorlevel 1 exit /b %errorlevel%
 
 echo Done.

@@ -8,7 +8,6 @@
     "qt5-base",
     "qt5-svg",
     "qt5-websockets",
-    "qt5-webengine",
     {
       "name": "arrow",
       "features": [

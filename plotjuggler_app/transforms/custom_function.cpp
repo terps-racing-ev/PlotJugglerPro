@@ -69,6 +69,7 @@ const SnippetData& CustomFunction::snippet() const
 void CustomFunction::calculate()
 {
   auto dst_data = _dst_vector.front();
+  _src_vector.clear();
 
   auto data_it = plotData()->numeric.find(_linked_plot_name);
   if (data_it == plotData()->numeric.end())
@@ -76,7 +77,6 @@ void CustomFunction::calculate()
     // failed! keep it empty
     return;
   }
-  _src_vector.clear();
   _src_vector.push_back(&data_it->second);
 
   for (const auto& channel : _used_channels)

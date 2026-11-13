@@ -246,6 +246,12 @@ private:
 
   bool ensureCurveLoaded(const std::string& curve_name);
 
+  void deleteCurves(const std::vector<std::string>& curve_names, bool delete_derived_transforms);
+
+  void recalculateCustomSeries();
+
+  void ensureSnippetSourcesLoaded(const SnippetData& snippet);
+
   void reloadPlottedLazyMf4Series();
 
   bool hydrateLazyMf4Series(const std::string& curve_name, LazyMf4SeriesInfo& info);

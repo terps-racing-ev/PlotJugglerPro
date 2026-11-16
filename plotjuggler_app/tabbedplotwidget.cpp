@@ -70,6 +70,10 @@ TabbedPlotWidget::TabbedPlotWidget(QString name, QMainWindow* mainwindow,
   _action_savePlots = new QAction(tr("&Save plots to file"), this);
   connect(_action_savePlots, &QAction::triggered, this, &TabbedPlotWidget::on_savePlotsToFile);
 
+  _action_exportExcel = new QAction(tr("&Export to Excel / SharePoint..."), this);
+  connect(_action_exportExcel, &QAction::triggered, this,
+          [this]() { emit exportExcelRequested(currentTab()); });
+
   _action_newCompareTab = new QAction(tr("New &Compare Tab (overlay runs)"), this);
   connect(_action_newCompareTab, &QAction::triggered, this, [this]() {
     addCompareTab();
@@ -79,6 +83,7 @@ TabbedPlotWidget::TabbedPlotWidget(QString name, QMainWindow* mainwindow,
   _tab_menu = new QMenu(this);
   _tab_menu->addSeparator();
   _tab_menu->addAction(_action_savePlots);
+  _tab_menu->addAction(_action_exportExcel);
   _tab_menu->addSeparator();
   _tab_menu->addAction(_action_newCompareTab);
 
@@ -86,9 +91,12 @@ TabbedPlotWidget::TabbedPlotWidget(QString name, QMainWindow* mainwindow,
   QString theme = settings.value("StyleSheet::theme", "light").toString();
 
   _action_savePlots->setIcon(LoadSvg(":/resources/svg/save.svg", theme));
+  _action_exportExcel->setIcon(LoadSvg(":/resources/svg/export.svg", theme));
 
   connect(this, &TabbedPlotWidget::destroyed, main_window, &MainWindow::on_tabbedAreaDestroyed);
   connect(this, &TabbedPlotWidget::tabAdded, main_window, &MainWindow::onPlotTabAdded);
+  connect(this, &TabbedPlotWidget::exportExcelRequested, main_window,
+          &MainWindow::exportTabToExcel);
   connect(this, &TabbedPlotWidget::undoableChange, main_window, &MainWindow::onUndoableChange);
 
   // TODO connect(_tabWidget, &TabWidget::movingPlotWidgetToTab, this,

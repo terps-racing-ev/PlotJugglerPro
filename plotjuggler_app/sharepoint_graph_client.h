@@ -24,6 +24,7 @@ struct SharePointDriveItem
   QString name;
   QString eTag;
   QString downloadUrl;
+  QString webUrl;
   qint64 size = 0;
   bool folder = false;
 };
@@ -40,6 +41,10 @@ public:
                                        QString* error);
   QString downloadFile(const SharePointDriveItem& folder, const SharePointDriveItem& file,
                        QString* error);
+  // Uploads into folder. An existing file with the same name is kept and the new
+  // one is renamed by SharePoint. Returns the created item, or an empty id on failure.
+  SharePointDriveItem uploadFile(const SharePointDriveItem& folder, const QString& file_name,
+                                 const QByteArray& content, QString* error);
 
 private:
   struct HttpResult

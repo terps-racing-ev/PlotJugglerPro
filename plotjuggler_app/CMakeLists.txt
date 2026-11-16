@@ -61,6 +61,9 @@ set(PLOTJUGGLER_SRC
     plotwidget_transforms.cpp
     sharepoint_graph_client.cpp
     sharepoint_log_dialog.cpp
+    sharepoint_upload_dialog.cpp
+    excel_export.cpp
+    xlsx_writer.cpp
     plot_docker.cpp
     plot_docker_toolbar.cpp
     preferences_dialog.cpp
@@ -98,6 +101,9 @@ set(PLOTJUGGLER_SRC
     sharepoint_config.h
     sharepoint_graph_client.h
     sharepoint_log_dialog.h
+    sharepoint_upload_dialog.h
+    excel_export.h
+    xlsx_writer.h
     nlohmann_parsers.cpp)
 
 add_executable(plotjuggler ${PLOTJUGGLER_SRC} ${RES_SRC} ${UI_SRC}

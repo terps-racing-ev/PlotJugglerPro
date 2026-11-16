@@ -309,6 +309,105 @@ QString SharePointGraphClient::downloadFile(const SharePointDriveItem& folder,
   return local_path;
 }
 
+SharePointDriveItem SharePointGraphClient::uploadFile(const SharePointDriveItem& folder,
+                                                     const QString& file_name,
+                                                     const QByteArray& content, QString* error)
+{
+  // Upload sessions work for any file size; simple PUT is capped at 4 MB.
+  QNetworkRequest session_request{ QUrl(
+      QString("%1/drives/%2/items/%3:/%4:/createUploadSession")
+          .arg(GRAPH_BASE, _drive_id, folder.id,
+               QString::fromLatin1(QUrl::toPercentEncoding(file_name)))) };
+  session_request.setRawHeader("Authorization", QString("Bearer %1").arg(_access_token).toUtf8());
+  session_request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+  QJsonObject item;
+  item["@microsoft.graph.conflictBehavior"] = "rename";
+  QJsonObject session_body;
+  session_body["item"] = item;
+  const HttpResult session = sendWithRetry(
+      session_request, "POST", QJsonDocument(session_body).toJson(QJsonDocument::Compact),
+      nullptr, error);
+  if (session.status_code < 200 || session.status_code >= 300)
+  {
+    if (error && session.status_code == 403)
+    {
+      *error = QObject::tr("SharePoint refused the upload (403). The PlotJuggler app registration "
+                           "needs write access to this site; ask the site admin to grant it.") +
+               "\n\n" + *error;
+    }
+    return {};
+  }
+  const QUrl upload_url(QJsonDocument::fromJson(session.body).object().value("uploadUrl").toString());
+
+  QProgressDialog progress(_parent);
+  progress.setWindowTitle(QObject::tr("Uploading to SharePoint"));
+  progress.setLabelText(QObject::tr("Uploading %1").arg(file_name));
+  progress.setCancelButtonText(QObject::tr("Cancel"));
+  progress.setRange(0, 1000);
+  progress.setWindowModality(Qt::ApplicationModal);
+  progress.show();
+
+  // Graph requires chunk sizes that are multiples of 320 KiB.
+  constexpr qint64 CHUNK_SIZE = 10 * 320 * 1024;
+  const qint64 total = content.size();
+  HttpResult result;
+  for (qint64 start = 0; start < total; start += CHUNK_SIZE)
+  {
+    const qint64 length = qMin(CHUNK_SIZE, total - start);
+    // The upload URL is pre-authenticated; Graph rejects an Authorization header on it.
+    QNetworkRequest chunk_request(upload_url);
+    chunk_request.setRawHeader("Content-Range", QString("bytes %1-%2/%3")
+                                                    .arg(start)
+                                                    .arg(start + length - 1)
+                                                    .arg(total)
+                                                    .toUtf8());
+    for (int attempt = 0; attempt < 4; attempt++)
+    {
+      result = sendRequest(chunk_request, "PUT", content.mid(start, length));
+      if ((result.status_code >= 200 && result.status_code < 300) ||
+          !QSet<int>({ 0, 429, 500, 502, 503, 504 }).contains(result.status_code) ||
+          progress.wasCanceled())
+      {
+        break;
+      }
+      waitWithEvents(qMin(8000, 1000 * (1 << attempt)), &progress);
+    }
+
+    if (progress.wasCanceled())
+    {
+      sendRequest(QNetworkRequest(upload_url), "DELETE");
+      if (error)
+      {
+        *error = QObject::tr("Upload cancelled");
+      }
+      return {};
+    }
+    if (result.status_code < 200 || result.status_code >= 300)
+    {
+      if (error)
+      {
+        *error = httpFailureMessage(QObject::tr("Upload"), result.status_code, result.body,
+                                    result.error);
+      }
+      return {};
+    }
+    progress.setValue(static_cast<int>(((start + length) * 1000) / total));
+  }
+
+  const QJsonObject obj = QJsonDocument::fromJson(result.body).object();
+  SharePointDriveItem uploaded;
+  uploaded.id = obj.value("id").toString();
+  uploaded.name = obj.value("name").toString(file_name);
+  uploaded.eTag = obj.value("eTag").toString();
+  uploaded.webUrl = obj.value("webUrl").toString();
+  uploaded.size = static_cast<qint64>(obj.value("size").toDouble());
+  if (uploaded.id.isEmpty() && error)
+  {
+    *error = QObject::tr("Upload finished but SharePoint returned no file details.");
+  }
+  return uploaded;
+}
+
 bool SharePointGraphClient::ensureAccessToken(QString* error)
 {
   const qint64 now = QDateTime::currentSecsSinceEpoch();

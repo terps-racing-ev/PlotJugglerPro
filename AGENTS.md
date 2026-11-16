@@ -148,6 +148,20 @@ instructions unless the task is explicitly to revive that platform.
 - Do not default app code to `tile.openstreetmap.org`; configure tiles with
   `PJ_MAP_TILES_URL` and `PJ_MAP_ATTRIBUTION`.
 
+## Excel / SharePoint Export
+
+- Tab right-click menu and Tools menu: `Export to Excel / SharePoint...`
+  (`SharePointUploadDialog`). Exports the current tab only.
+- One sheet per time-series plot over the visible X range, resampled at a
+  user-chosen rate with last-known-value hold (blank outside a signal's data),
+  plus an `Info` sheet. XY plots and map panels are skipped.
+- `xlsx_writer.cpp` is a dependency-free .xlsx writer (Qt's zlib via
+  `qCompress`). Do not add an Excel library for this.
+- Uploads go to a `Testing Logs` date folder through a Graph upload session
+  with `conflictBehavior=rename`; the source log's folder is pre-selected from
+  its `.pjsharepoint.json` metadata. Upload needs the app registration's
+  `Sites.Selected` grant on the site to include write.
+
 ## Key Files
 
 - `plotjuggler_app/plot_docker.h`

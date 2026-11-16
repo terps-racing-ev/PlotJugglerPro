@@ -87,6 +87,7 @@ private:
   QPushButton* _buttonAddTab;
 
   QAction* _action_savePlots;
+  QAction* _action_exportExcel;
   QAction* _action_newCompareTab;
 
   QMenu* _tab_menu;
@@ -113,6 +114,7 @@ signals:
   void undoableChange();
   void tabAdded(PlotDocker*);
   void sendTabToNewWindow(PlotDocker*);
+  void exportExcelRequested(PlotDocker*);
 };
 
 #endif  // TABBEDPLOTWIDGET_H

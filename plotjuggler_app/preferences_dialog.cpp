@@ -41,6 +41,9 @@ PreferencesDialog::PreferencesDialog(QWidget* parent)
   bool no_splash = settings.value("Preferences::no_splash", false).toBool();
   ui->checkBoxSkipSplash->setChecked(no_splash);
 
+  ui->checkBoxCheckUpdates->setChecked(
+      settings.value("Preferences::check_updates", true).toBool());
+
   // Behavior
   bool use_plot_color_index = settings.value("Preferences::use_plot_color_index", false).toBool();
   bool remember_color = settings.value("Preferences::remember_color", true).toBool();
@@ -109,6 +112,7 @@ void PreferencesDialog::on_buttonBox_accepted()
   settings.setValue("Preferences::use_separator", ui->checkBoxSeparator->isChecked());
   settings.setValue("Preferences::use_opengl", ui->checkBoxOpenGL->isChecked());
   settings.setValue("Preferences::no_splash", ui->checkBoxSkipSplash->isChecked());
+  settings.setValue("Preferences::check_updates", ui->checkBoxCheckUpdates->isChecked());
   settings.setValue("Preferences::autozoom_visibility",
                     ui->checkBoxAutoZoomVisibility->isChecked());
   settings.setValue("Preferences::autozoom_filter_applied",

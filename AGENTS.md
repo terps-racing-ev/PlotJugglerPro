@@ -132,6 +132,24 @@ instructions unless the task is explicitly to revive that platform.
   top. A plot's second and later signals are drawn dashed. Every per-run curve
   is listed in the legend as `signal [run]`, with a line icon showing its style.
 
+## Releases and Update Check
+
+- Releases are tagged by date (`2026.10.26`). The build bakes the nearest tag
+  (`git describe --tags --abbrev=0`) into `pj_release_tag.h` on every build.
+  The CMake `3.15.0` project version is the core/plugin version, not the
+  release version.
+- `UpdateChecker` (`update_checker.*`) queries GitHub
+  `releases/latest` for `PJ_UPDATE_REPO` (CMake cache var, default
+  `terps-racing-ev/PlotJugglerPro`; empty disables it). On startup it shows a
+  toast only if a newer release exists; Help > Check for Updates... always
+  reports. Untagged builds never notify on startup.
+- The check only sees published, non-draft, non-prerelease GitHub Releases.
+  After packaging, create a Release on the tag and attach the installer/DMG
+  (`*-Windows-x64-Installer.exe`, `*-macOS-arm64.dmg`) so the Download link
+  goes straight to the right file.
+- Do not reintroduce the upstream telemetry POST or the upstream
+  `facontidavide/PlotJuggler` release check.
+
 ## Map Panel
 
 - Map is a native dock/split panel in the main plot layout, not a toolbox window.

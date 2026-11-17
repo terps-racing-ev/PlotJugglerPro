@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QDialog>
 #include <QRandomGenerator>
+#include <QTimer>
 
 #include "PlotJuggler/transform_function.h"
 #include "transforms/binary_filter.h"
@@ -404,6 +405,9 @@ int main(int argc, char* argv[])
 
   const int message_index = QRandomGenerator::global()->bounded(startup_messages.size());
   window->setStatusBarMessage(startup_messages.at(message_index));
+
+  // Delay a little so the toast is not lost while the window is still settling.
+  QTimer::singleShot(2000, window, [window]() { window->checkForUpdatesOnStartup(); });
 
   return app.exec();
 }

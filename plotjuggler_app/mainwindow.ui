@@ -2012,6 +2012,7 @@
     </property>
     <addaction name="actionCheatsheet"/>
     <addaction name="separator"/>
+    <addaction name="actionCheckForUpdates"/>
     <addaction name="actionAbout"/>
    </widget>
    <widget class="QMenu" name="menuTools">
@@ -2037,6 +2038,11 @@
   <action name="actionAbout">
    <property name="text">
     <string>About</string>
+   </property>
+  </action>
+  <action name="actionCheckForUpdates">
+   <property name="text">
+    <string>Check for Updates...</string>
    </property>
   </action>
   <action name="actionClearBuffer">

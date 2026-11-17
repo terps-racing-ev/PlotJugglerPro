@@ -51,6 +51,8 @@ set(PLOTJUGGLER_SRC
     messageparser_base.cpp
     toast_notification.cpp
     toast_manager.cpp
+    update_checker.cpp
+    update_checker.h
     menubar.cpp
     map_dock_panel.cpp
     map_tile_widget.cpp
@@ -121,6 +123,28 @@ if(APPIMAGE_BUILD)
 endif()
 
 target_compile_definitions(plotjuggler PRIVATE PJ_INSTALLATION="${PJ_INSTALLATION}")
+
+# GitHub repo (owner/name) checked for new releases. Empty disables the check.
+set(PJ_UPDATE_REPO "terps-racing-ev/PlotJugglerPro"
+    CACHE STRING "GitHub owner/repo checked for PlotJugglerPro releases")
+target_compile_definitions(plotjuggler PRIVATE PJ_UPDATE_REPO="${PJ_UPDATE_REPO}")
+
+# Release tag (git describe) baked into the app for the update check. Refreshed
+# on every build so tagging after configure still works.
+set(PJ_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(PJ_RELEASE_TAG_HEADER "${PJ_GENERATED_DIR}/pj_release_tag.h")
+set(PJ_RELEASE_TAG_COMMAND
+    "${CMAKE_COMMAND}" "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
+    "-DOUTPUT_FILE=${PJ_RELEASE_TAG_HEADER}" -P
+    "${CMAKE_SOURCE_DIR}/cmake/pj_release_tag.cmake")
+execute_process(COMMAND ${PJ_RELEASE_TAG_COMMAND})
+add_custom_target(
+  pj_release_tag
+  COMMAND ${PJ_RELEASE_TAG_COMMAND}
+  BYPRODUCTS "${PJ_RELEASE_TAG_HEADER}"
+  COMMENT "Updating PlotJugglerPro release tag")
+add_dependencies(plotjuggler pj_release_tag)
+target_include_directories(plotjuggler PRIVATE "${PJ_GENERATED_DIR}")
 
 target_include_directories(
   plotjuggler

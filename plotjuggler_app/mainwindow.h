@@ -39,6 +39,7 @@
 #include "ui_mainwindow.h"
 
 class QVBoxLayout;
+class UpdateChecker;
 
 class MainWindow : public QMainWindow
 {
@@ -63,6 +64,9 @@ public:
   /// @param message The text/HTML to display (supports rich text with clickable links)
   /// @param icon Optional 56x56 icon to show on the left
   void showToast(const QString& message, const QPixmap& icon = QPixmap());
+
+  /// Quiet GitHub release check; shows a toast only if a newer release exists.
+  void checkForUpdatesOnStartup();
 
 public slots:
 
@@ -202,6 +206,8 @@ private:
   // Toast notification manager
   ToastManager* _toast_manager;
 
+  UpdateChecker* _update_checker;
+
   void initializeActions();
   void initializePlugins();
 
@@ -313,6 +319,7 @@ public slots:
   // TODO ?  void on_actionSaveAllPlotTabs_triggered();
 
   void on_actionAbout_triggered();
+  void on_actionCheckForUpdates_triggered();
   void on_actionExit_triggered();
 
   void on_buttonActivateGrid_toggled(bool checked);

@@ -64,6 +64,7 @@
 #include "multifile_prefix.h"
 #include "sharepoint_log_dialog.h"
 
+#include "update_checker.h"
 #include "ui_aboutdialog.h"
 #include "preferences_dialog.h"
 #include "nlohmann_parsers.h"
@@ -395,6 +396,12 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
 
   // Initialize toast notification manager
   _toast_manager = new ToastManager(ui->centralWidget);
+
+  _update_checker = new UpdateChecker(this);
+  connect(_update_checker, &UpdateChecker::updateAvailable, this,
+          [this](const QString& message) {
+            showToast(message, QPixmap(":/resources/success_kid.png"));
+          });
 
   initializeActions();
 
@@ -3451,13 +3458,27 @@ void MainWindow::onCustomPlotCreated(std::vector<CustomPlotPtr> custom_plots)
   _curvelist_widget->clearSelections();
 }
 
+void MainWindow::checkForUpdatesOnStartup()
+{
+  _update_checker->checkOnStartup();
+}
+
+void MainWindow::on_actionCheckForUpdates_triggered()
+{
+  _update_checker->checkInteractive();
+}
+
 void MainWindow::on_actionAbout_triggered()
 {
   QDialog* dialog = new QDialog(this);
   auto ui = new Ui::AboutDialog();
   ui->setupUi(dialog);
 
-  ui->label_version->setText(QString("version: ") + QApplication::applicationVersion());
+  const QString release_tag = UpdateChecker::currentReleaseTag();
+  ui->label_version->setText(
+      QString("release: %1  (core %2)")
+          .arg(release_tag.isEmpty() ? QString("dev build") : release_tag,
+               QApplication::applicationVersion()));
   ui->titleTextBrowser->setHtml("<h2>PlotJugglerPro</h2>");
   ui->bodyTextBrowser->setHtml(
       "<p><b>PlotJugglerPro</b> is an internal workflow fork of PlotJuggler.</p>"

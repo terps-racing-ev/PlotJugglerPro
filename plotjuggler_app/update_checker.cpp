@@ -29,7 +29,30 @@ constexpr const char* kCheckEnabledKey = "Preferences::check_updates";
 constexpr const char* kSkippedTagKey = "Updates::skipped_tag";
 constexpr int kTimeoutMs = 8000;
 
-QVersionNumber tagToVersion(QString tag)
+// Release tags are dates, optionally followed by one letter for extra releases
+// on the same day: 2026.11.17 < 2026.11.17a < 2026.11.17b < 2026.11.18.
+struct ReleaseVersion
+{
+  QVersionNumber number;
+  QChar revision;  // null for no letter
+
+  bool isNull() const
+  {
+    return number.isNull();
+  }
+
+  bool operator>(const ReleaseVersion& other) const
+  {
+    const int cmp = QVersionNumber::compare(number, other.number);
+    if (cmp != 0)
+    {
+      return cmp > 0;
+    }
+    return revision.unicode() > other.revision.unicode();
+  }
+};
+
+ReleaseVersion tagToVersion(QString tag)
 {
   tag = tag.trimmed();
   if (tag.startsWith('v') || tag.startsWith('V'))
@@ -37,9 +60,21 @@ QVersionNumber tagToVersion(QString tag)
     tag.remove(0, 1);
   }
   int suffix_index = 0;
-  QVersionNumber version = QVersionNumber::fromString(tag, &suffix_index);
-  // Reject tags that are not purely numeric (e.g. "2026.10.26-rc1").
-  return suffix_index == tag.size() ? version : QVersionNumber();
+  ReleaseVersion version;
+  version.number = QVersionNumber::fromString(tag, &suffix_index);
+  const QString suffix = tag.mid(suffix_index).toLower();
+
+  if (suffix.isEmpty())
+  {
+    return version;
+  }
+  if (suffix.size() == 1 && suffix[0] >= 'a' && suffix[0] <= 'z')
+  {
+    version.revision = suffix[0];
+    return version;
+  }
+  // Anything else (e.g. "2026.10.26-rc1") is not a recognized release tag.
+  return ReleaseVersion();
 }
 
 // Installer/DMG names produced by tools/package_*_release.*
@@ -191,9 +226,9 @@ void UpdateChecker::handleReply(QNetworkReply* reply, bool interactive)
 
   const QJsonObject obj = QJsonDocument::fromJson(reply->readAll()).object();
   const ReleaseInfo latest = parseRelease(obj);
-  const QVersionNumber latest_version = tagToVersion(latest.tag);
+  const ReleaseVersion latest_version = tagToVersion(latest.tag);
   const QString current_tag = currentReleaseTag();
-  const QVersionNumber current_version = tagToVersion(current_tag);
+  const ReleaseVersion current_version = tagToVersion(current_tag);
 
   qDebug() << "Update check: current" << current_tag << "latest" << latest.tag;
 

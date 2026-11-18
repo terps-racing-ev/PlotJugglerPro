@@ -41,10 +41,16 @@ cmake --build --preset macos-arm64-pro-release-install
 ./install/macos-arm64/bin/plotjuggler
 ```
 
-The release installer path is:
+Release packaging:
 
 ```powershell
+# Windows installer (.exe)
 .\tools\package_windows_release.ps1
+```
+
+```sh
+# macOS Apple Silicon .app + DMG (needs: brew install uv), output in dist/macos-arm64
+./tools/package_macos_release.sh
 ```
 
 See:
@@ -60,18 +66,15 @@ See:
 - `plotjuggler_app`: GUI executable and Pro workflow code.
 - `plotjuggler_plugins`: loaders, streamers, parsers, and tools. Keep the
   plugins used by the workflow; prune the rest deliberately.
-- `installer` and `tools/package_windows_release.*`: current Windows packaging.
+- `installer` and `tools/package_windows_release.*`: Windows packaging.
+- `tools/package_macos_release.sh`: macOS `.app`/DMG packaging.
 
 ## Platform Policy
 
-Maintained local builds:
+Maintained builds:
 
 - Windows local build and installer
-- Native macOS Apple Silicon local build
-
-Not packaged yet:
-
-- macOS `.app` bundle/DMG
+- Native macOS Apple Silicon local build and ad-hoc signed `.app`/DMG
 
 Not maintained for this branch:
 

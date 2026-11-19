@@ -141,6 +141,8 @@ instructions unless the task is explicitly to revive that platform.
 
 ## Releases and Update Check
 
+The full release checklist is in `PLOTJUGGLER_PRO_RELEASE.md`.
+
 - Releases are tagged by date (`2026.10.26`), with an optional single letter
   for extra same-day releases (`2026.11.17a` > `2026.11.17`). Other suffixes
   (`-rc1`, `-beta`) are not recognized by the update check. The build bakes the nearest tag

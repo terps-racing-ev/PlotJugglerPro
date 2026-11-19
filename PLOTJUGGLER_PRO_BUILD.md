@@ -1,8 +1,17 @@
 # PlotJugglerPro Local Build
 
-This document describes the local Windows workflow and native Apple Silicon
-macOS build. Other inherited upstream build paths are not maintained for this
-branch.
+How to build and run PlotJugglerPro on a development machine. For packaging
+and publishing a release, see `PLOTJUGGLER_PRO_RELEASE.md`.
+
+Maintained platforms:
+
+- Windows 11, Visual Studio 2022, preset `windows-vs2022-pro`
+- Native Apple Silicon macOS, Homebrew Qt 5, preset `macos-arm64-pro`
+
+Linux, Snap, AppImage, Nix, Docker, ROS package and Conan workflows are
+inherited from upstream and are not maintained for PlotJugglerPro. Don't use
+old upstream commands that clone `facontidavide/PlotJuggler` or build in
+`build/PlotJuggler`.
 
 ## Requirements
 
@@ -12,7 +21,7 @@ branch.
 - CMake
 - vcpkg at `C:\vcpkg`
 - Qt 5.15.2 at `C:\Qt\5.15.2\msvc2019_64`
-- Qt Installer Framework only when creating an installer
+- Qt Installer Framework 4.10, only when creating an installer
 
 ### macOS Apple Silicon
 
@@ -29,26 +38,12 @@ The preset expects Homebrew at `/opt/homebrew` and Qt 5 at
 headers explicitly, which is needed on systems where the active compiler does
 not find those headers automatically.
 
-## Configure
+## Windows
 
-### Windows
+Configure (writes to `build\PlotJugglerPro`):
 
 ```powershell
 cmake --preset windows-vs2022-pro
-```
-
-The preset writes to:
-
-```powershell
-build\PlotJugglerPro
-```
-
-## Build
-
-Fast compile check:
-
-```powershell
-cmake --build build\PlotJugglerPro --config Release --target plotjuggler
 ```
 
 Build the runnable local install:
@@ -57,67 +52,62 @@ Build the runnable local install:
 cmake --build build\PlotJugglerPro --config Release --target install
 ```
 
-Equivalent preset:
+or the equivalent preset:
 
 ```powershell
 cmake --build --preset windows-vs2022-pro-release-install
 ```
 
-## Launch
+Run:
 
 ```powershell
 .\install\bin\plotjuggler.exe
 ```
 
-The map panel uses a native Qt widget and does not require Qt WebEngine.
+Fast compile check without installing:
 
-### macOS Apple Silicon
+```powershell
+cmake --build build\PlotJugglerPro --config Release --target plotjuggler
+```
 
-Configure and build/install the native arm64 executable and plugins:
+## macOS Apple Silicon
+
+Configure, build and install the native arm64 executable and plugins:
 
 ```sh
 cmake --preset macos-arm64-pro
 cmake --build --preset macos-arm64-pro-release-install
 ```
 
-Run the installed executable:
+Run:
 
 ```sh
 ./install/macos-arm64/bin/plotjuggler
 ```
 
-For a fast compile check without installing:
+Fast compile check without installing:
 
 ```sh
 cmake --build --preset macos-arm64-pro-release --target plotjuggler
 ```
 
-The local executable links against Homebrew Qt. To build a relocatable,
-Apple Silicon release `.app` and DMG with Qt frameworks and plugins bundled,
-run:
+This local executable links against Homebrew Qt and only runs on a machine set
+up like this one. To build the relocatable `.app` and DMG you give to users,
+see `PLOTJUGGLER_PRO_RELEASE.md`.
 
-```sh
-./tools/package_macos_release.sh
-```
+## Build Options
 
-The release is written to `dist/macos-arm64` and targets macOS 13 Ventura or
-newer. It uses a free ad-hoc signature that does not require an Apple Developer
-account; it is not signed with a developer identity or notarized. On first
-launch, Gatekeeper may require right-clicking the app in Finder and choosing
-**Open**, then confirming the prompt.
-
-The release script bundles the MF4 Python runtime and `asammdf`. Install `uv`
-on the packaging Mac and allow network access to fetch the pinned Python and
-package builds:
-
-```sh
-brew install uv
-```
+- `PJ_UPDATE_REPO`: GitHub `owner/repo` that the update check queries. The
+  default is `terps-racing-ev/PlotJugglerPro`; set it empty to disable the
+  check. Example:
+  `cmake --preset windows-vs2022-pro -DPJ_UPDATE_REPO=`. It is a cache
+  variable, so it stays set until you configure again with another value.
 
 ## Troubleshooting
 
-If `install\bin\plotjuggler.exe` is running, the install target can fail because
-Windows will not overwrite the executable. Close PlotJuggler and rebuild.
+If `install\bin\plotjuggler.exe` is running, the install step fails with
+"Permission denied" because Windows will not overwrite a running executable.
+Close PlotJugglerPro and rebuild.
 
 If MSBuild prints repeated red lines from
 `vcpkg\scripts\buildsystems\msbuild\applocal.ps1` with `The system cannot find
@@ -136,25 +126,26 @@ installed at `/opt/homebrew/opt/qt@5` and rerun the configure preset.
 
 ## MF4/MDF Files on macOS
 
-The release DMG includes Python and `asammdf`, so MF4 files work without
-additional user setup. Local development builds use `python3` by default;
-install `asammdf` into its environment or set `PJ_ASAMMDF_PYTHON` to choose
-another Python executable:
+The release DMG bundles Python and `asammdf`, so MF4 files work there without
+setup. Local development builds use `python3` by default. Install `asammdf`
+into that environment, or set `PJ_ASAMMDF_PYTHON` to another Python
+executable:
 
 ```sh
 python3 -m venv "$HOME/.venvs/plotjuggler-mf4"
 "$HOME/.venvs/plotjuggler-mf4/bin/python" -m pip install --upgrade pip asammdf
-```
-
-```sh
 export PJ_ASAMMDF_PYTHON="$HOME/.venvs/plotjuggler-mf4/bin/python"
 ./install/macos-arm64/bin/plotjuggler
 ```
 
+Packaged apps use their bundled Python automatically. `PJ_ASAMMDF_PYTHON` still
+overrides it for troubleshooting.
+
 ## Map Tiles
 
-The app does not default to `tile.openstreetmap.org`. Set a provider before
-launching if online map tiles are needed:
+The map panel is a native Qt widget and does not need Qt WebEngine. The app
+does not default to `tile.openstreetmap.org`. Set a tile provider before
+launching if you need online map tiles:
 
 ```powershell
 $env:PJ_MAP_TILES_URL="https://your.tile.server/{z}/{x}/{y}.png"
@@ -162,8 +153,7 @@ $env:PJ_MAP_ATTRIBUTION="Your attribution text"
 .\install\bin\plotjuggler.exe
 ```
 
-On macOS, set `PJ_MAP_TILES_URL` and `PJ_MAP_ATTRIBUTION` in the shell before
-launching the app.
+On macOS, export the same two variables in the shell before launching.
 
 ## Current Feature Surface
 
@@ -177,4 +167,6 @@ launching the app.
 - X-only time-series navigation with automatic Y refit
 - `PlotDocker`-owned Y-axis/canvas alignment
 - Per-tab timeline slider following the visible time viewport
+- Runs panel and Compare tabs
 - Lazy-loading data work, including MF4 paths
+- GitHub release update check (startup toast and Help > Check for Updates...)

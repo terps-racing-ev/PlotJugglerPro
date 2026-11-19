@@ -55,9 +55,9 @@ Release packaging:
 
 See:
 
-- `PLOTJUGGLER_PRO_BUILD.md`
-- `PLOTJUGGLER_PRO_WINDOWS_RELEASE.md`
-- `COMPILE.md`
+- `PLOTJUGGLER_PRO_BUILD.md`: development builds, requirements, troubleshooting
+- `PLOTJUGGLER_PRO_RELEASE.md`: tagging, packaging, publishing GitHub Releases,
+  and how users update
 
 ## Architecture
 

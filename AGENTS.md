@@ -66,8 +66,14 @@ cmake --build --preset macos-arm64-pro-release-install
 
 The macOS preset targets arm64, expects Homebrew at `/opt/homebrew` with Qt 5
 at `/opt/homebrew/opt/qt@5`, and explicitly adds the Command Line Tools SDK
-libc++ headers. It produces a local build, not a relocatable `.app` bundle or
-DMG.
+libc++ headers. That produces a local build linked against Homebrew Qt.
+
+macOS release (relocatable `.app` + DMG, ad-hoc signed, bundles Qt and the MF4
+Python runtime; needs `brew install uv`; output in `dist/macos-arm64`):
+
+```sh
+./tools/package_macos_release.sh
+```
 
 Do not use inherited Snap, AppImage, Nix, Docker, ROS package, or Conan build
 instructions unless the task is explicitly to revive that platform.
@@ -80,6 +86,7 @@ instructions unless the task is explicitly to revive that platform.
 - `plotjuggler_plugins`: loaders/parsers/tools. Keep plugins that support the
   workflow; prune unused upstream plugins deliberately.
 - `installer` and `tools/package_windows_release.*`: current Windows release path.
+- `tools/package_macos_release.sh`: macOS `.app`/DMG release path.
 
 ## Time-Series Layout Model
 
@@ -131,6 +138,26 @@ instructions unless the task is explicitly to revive that platform.
 - Color identifies a run everywhere. The reference run is drawn thicker and on
   top. A plot's second and later signals are drawn dashed. Every per-run curve
   is listed in the legend as `signal [run]`, with a line icon showing its style.
+
+## Releases and Update Check
+
+- Releases are tagged by date (`2026.10.26`), with an optional single letter
+  for extra same-day releases (`2026.11.17a` > `2026.11.17`). Other suffixes
+  (`-rc1`, `-beta`) are not recognized by the update check. The build bakes the nearest tag
+  (`git describe --tags --abbrev=0`) into `pj_release_tag.h` on every build.
+  The CMake `3.15.0` project version is the core/plugin version, not the
+  release version.
+- `UpdateChecker` (`update_checker.*`) queries GitHub
+  `releases/latest` for `PJ_UPDATE_REPO` (CMake cache var, default
+  `terps-racing-ev/PlotJugglerPro`; empty disables it). On startup it shows a
+  toast only if a newer release exists; Help > Check for Updates... always
+  reports. Untagged builds never notify on startup.
+- The check only sees published, non-draft, non-prerelease GitHub Releases.
+  After packaging, create a Release on the tag and attach the installer/DMG
+  (`*-Windows-x64-Installer.exe`, `*-macOS-arm64.dmg`) so the Download link
+  goes straight to the right file.
+- Do not reintroduce the upstream telemetry POST or the upstream
+  `facontidavide/PlotJuggler` release check.
 
 ## Map Panel
 

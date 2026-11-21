@@ -39,6 +39,7 @@
 #include "ui_mainwindow.h"
 
 class QVBoxLayout;
+class UpdateChecker;
 
 class MainWindow : public QMainWindow
 {
@@ -63,6 +64,9 @@ public:
   /// @param message The text/HTML to display (supports rich text with clickable links)
   /// @param icon Optional 56x56 icon to show on the left
   void showToast(const QString& message, const QPixmap& icon = QPixmap());
+
+  /// Quiet GitHub release check; shows a toast only if a newer release exists.
+  void checkForUpdatesOnStartup();
 
 public slots:
 
@@ -204,6 +208,8 @@ private:
   // Toast notification manager
   ToastManager* _toast_manager;
 
+  UpdateChecker* _update_checker;
+
   void initializeActions();
   void initializePlugins();
 
@@ -247,6 +253,12 @@ private:
   void registerLazyMf4Series();
 
   bool ensureCurveLoaded(const std::string& curve_name);
+
+  void deleteCurves(const std::vector<std::string>& curve_names, bool delete_derived_transforms);
+
+  void recalculateCustomSeries();
+
+  void ensureSnippetSourcesLoaded(const SnippetData& snippet);
 
   void reloadPlottedLazyMf4Series();
 
@@ -309,6 +321,7 @@ public slots:
   // TODO ?  void on_actionSaveAllPlotTabs_triggered();
 
   void on_actionAbout_triggered();
+  void on_actionCheckForUpdates_triggered();
   void on_actionExit_triggered();
 
   void on_buttonActivateGrid_toggled(bool checked);

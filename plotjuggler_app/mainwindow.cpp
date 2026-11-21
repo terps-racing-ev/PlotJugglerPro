@@ -65,6 +65,7 @@
 #include "sharepoint_log_dialog.h"
 #include "sharepoint_upload_dialog.h"
 
+#include "update_checker.h"
 #include "ui_aboutdialog.h"
 #include "preferences_dialog.h"
 #include "nlohmann_parsers.h"
@@ -402,6 +403,12 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
   // Initialize toast notification manager
   _toast_manager = new ToastManager(ui->centralWidget);
 
+  _update_checker = new UpdateChecker(this);
+  connect(_update_checker, &UpdateChecker::updateAvailable, this,
+          [this](const QString& message) {
+            showToast(message, QPixmap(":/resources/success_kid.png"));
+          });
+
   initializeActions();
 
   LoadColorMapFromSettings();
@@ -508,6 +515,8 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
   editor_layout->setMargin(0);
   ui->formulaPage->setLayout(editor_layout);
   _function_editor = new FunctionEditorWidget(_mapped_plot_data, _transform_functions, this);
+  _function_editor->setCurveLoadCallback(
+      [this](const std::string& curve_name) { return ensureCurveLoaded(curve_name); });
   editor_layout->addWidget(_function_editor);
 
   connect(_function_editor, &FunctionEditorWidget::closed, this,
@@ -1323,13 +1332,19 @@ bool MainWindow::xmlLoadState(QDomDocument state_document)
 
 void MainWindow::onDeleteMultipleCurves(const std::vector<std::string>& curve_names)
 {
+  deleteCurves(curve_names, true);
+}
+
+void MainWindow::deleteCurves(const std::vector<std::string>& curve_names,
+                              bool delete_derived_transforms)
+{
   std::set<std::string> to_be_deleted;
   for (auto& name : curve_names)
   {
     to_be_deleted.insert(name);
   }
   // add to the list of curves to delete the derived transforms
-  size_t prev_size = 0;
+  size_t prev_size = delete_derived_transforms ? 0 : to_be_deleted.size();
   while (prev_size < to_be_deleted.size())
   {
     prev_size = to_be_deleted.size();
@@ -1578,6 +1593,15 @@ bool MainWindow::ensureCurveLoaded(const std::string& curve_name)
   return hydrateLazyMf4Series(curve_name, info_it->second);
 }
 
+void MainWindow::ensureSnippetSourcesLoaded(const SnippetData& snippet)
+{
+  ensureCurveLoaded(snippet.linked_source.toStdString());
+  for (const auto& source : snippet.additional_sources)
+  {
+    ensureCurveLoaded(source.toStdString());
+  }
+}
+
 void MainWindow::reloadPlottedLazyMf4Series()
 {
   std::set<std::string> plotted_lazy_series;
@@ -1599,6 +1623,15 @@ void MainWindow::reloadPlottedLazyMf4Series()
   for (const auto& curve_name : plotted_lazy_series)
   {
     ensureCurveLoaded(curve_name);
+  }
+
+  // custom series compute from their sources even when those aren't plotted
+  for (const auto& [id, function] : _transform_functions)
+  {
+    if (auto custom = dynamic_cast<CustomFunction*>(function.get()))
+    {
+      ensureSnippetSourcesLoaded(custom->snippet());
+    }
   }
 
   for (auto docker : affected_dockers)
@@ -1856,6 +1889,11 @@ bool MainWindow::loadDataFromFiles(QStringList filenames)
   }
 
   std::unordered_set<std::string> previous_names = _mapped_plot_data.getAllNames();
+  // custom series always carry over and are recalculated against the new data
+  for (const auto& [name, transform] : _transform_functions)
+  {
+    previous_names.erase(name);
+  }
 
   QStringList loaded_filenames;
   _loaded_datafiles_previous.clear();
@@ -1900,7 +1938,8 @@ bool MainWindow::loadDataFromFiles(QStringList filenames)
       {
         to_delete.push_back(name);
       }
-      onDeleteMultipleCurves(to_delete);
+      deleteCurves(to_delete, false);
+      recalculateCustomSeries();
       data_replaced_entirely = true;
     }
   }
@@ -2017,7 +2056,9 @@ std::unordered_set<std::string> MainWindow::loadDataFromFile(const FileLoadInfo&
         AddPrefixToPlotData(info.prefix.toStdString(), mapped_data.user_defined);
 
         added_names = mapped_data.getAllNames();
-        bool remove_old = !merge_files;
+        // lazy MF4 channels are placeholders and can't be merged sample-wise
+        const bool is_mf4 = extension == "mf4" || extension == "mdf";
+        bool remove_old = !merge_files || is_mf4;
         importPlotDataMap(mapped_data, remove_old);
         reloadPlottedLazyMf4Series();
 
@@ -2062,6 +2103,14 @@ std::unordered_set<std::string> MainWindow::loadDataFromFile(const FileLoadInfo&
   }
   _curvelist_widget->updateFilter();
 
+  recalculateCustomSeries();
+  updateTimeSlider();
+
+  return added_names;
+}
+
+void MainWindow::recalculateCustomSeries()
+{
   // clean the custom plot. Function updateDataAndReplot will update them
   for (auto& custom_it : _transform_functions)
   {
@@ -2075,9 +2124,6 @@ std::unordered_set<std::string> MainWindow::loadDataFromFile(const FileLoadInfo&
   forEachWidget([](PlotWidget* plot) { plot->updateCurves(true); });
 
   updateDataAndReplot(true);
-  updateTimeSlider();
-
-  return added_names;
 }
 
 void MainWindow::on_buttonStreamingNotifications_clicked()
@@ -2745,6 +2791,7 @@ bool MainWindow::loadLayoutFromFile(QString filename)
         CustomPlotPtr new_custom_plot = std::make_shared<LuaCustomFunction>(snippet);
         new_custom_plot->xmlLoadState(custom_eq);
 
+        ensureSnippetSourcesLoaded(new_custom_plot->snippet());
         new_custom_plot->calculateAndAdd(_mapped_plot_data);
         const auto& alias_name = new_custom_plot->aliasName();
         _curvelist_widget->addCustom(alias_name);
@@ -2991,7 +3038,15 @@ void MainWindow::updateDataAndReplot(bool replot_hidden_tabs)
   {
     if (dynamic_cast<ReactiveLuaFunction*>(function) == nullptr)
     {
-      function->calculate();
+      try
+      {
+        function->calculate();
+      }
+      catch (const std::exception& ex)
+      {
+        // a carried-over custom series stays empty until its sources exist again
+        qWarning() << "Custom series not calculated:" << ex.what();
+      }
     }
   }
 
@@ -3297,6 +3352,7 @@ void MainWindow::onRefreshCustomPlot(const std::string& plot_name)
       return;
     }
     CustomPlotPtr ce = std::dynamic_pointer_cast<LuaCustomFunction>(custom_it->second);
+    ensureSnippetSourcesLoaded(ce->snippet());
     ce->calculateAndAdd(_mapped_plot_data);
 
     onUpdateLeftTableValues();
@@ -3380,6 +3436,7 @@ void MainWindow::onCustomPlotCreated(std::vector<CustomPlotPtr> custom_plots)
     }
     try
     {
+      ensureSnippetSourcesLoaded(custom_plot->snippet());
       custom_plot->calculateAndAdd(_mapped_plot_data);
     }
     catch (std::exception& ex)
@@ -3422,13 +3479,27 @@ void MainWindow::onCustomPlotCreated(std::vector<CustomPlotPtr> custom_plots)
   _curvelist_widget->clearSelections();
 }
 
+void MainWindow::checkForUpdatesOnStartup()
+{
+  _update_checker->checkOnStartup();
+}
+
+void MainWindow::on_actionCheckForUpdates_triggered()
+{
+  _update_checker->checkInteractive();
+}
+
 void MainWindow::on_actionAbout_triggered()
 {
   QDialog* dialog = new QDialog(this);
   auto ui = new Ui::AboutDialog();
   ui->setupUi(dialog);
 
-  ui->label_version->setText(QString("version: ") + QApplication::applicationVersion());
+  const QString release_tag = UpdateChecker::currentReleaseTag();
+  ui->label_version->setText(
+      QString("release: %1  (core %2)")
+          .arg(release_tag.isEmpty() ? QString("dev build") : release_tag,
+               QApplication::applicationVersion()));
   ui->titleTextBrowser->setHtml("<h2>PlotJugglerPro</h2>");
   ui->bodyTextBrowser->setHtml(
       "<p><b>PlotJugglerPro</b> is an internal workflow fork of PlotJuggler.</p>"

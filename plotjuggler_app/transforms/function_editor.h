@@ -27,6 +27,8 @@ public:
 
   void setLinkedPlotName(const QString& linkedPlotName);
 
+  void setCurveLoadCallback(std::function<bool(const std::string&)> callback);
+
   enum EditorMode
   {
     CREATE,
@@ -129,6 +131,8 @@ private:
   PlotWidget* _preview_widget;
 
   EditorMode _editor_mode;
+
+  std::function<bool(const std::string&)> _curve_load_callback;
 
   QLuaCompleter* lua_completer_;
   QLuaCompleter* lua_completer_batch_;

@@ -217,6 +217,12 @@ void FunctionEditorWidget::setLinkedPlotName(const QString& linkedPlotName)
   ui->lineEditSource->setText(linkedPlotName);
 }
 
+void FunctionEditorWidget::setCurveLoadCallback(
+    std::function<bool(const std::string&)> callback)
+{
+  _curve_load_callback = std::move(callback);
+}
+
 void FunctionEditorWidget::clear()
 {
   ui->lineEditSource->setText("");
@@ -821,6 +827,20 @@ void FunctionEditorWidget::onUpdatePreview()
 
   if (lua_function)
   {
+    // lazy sources (MF4) are empty placeholders until loaded
+    if (_curve_load_callback)
+    {
+      QStringList sources = snippet.additional_sources;
+      sources.push_front(snippet.linked_source);
+      for (const auto& source : sources)
+      {
+        if (_plot_map_data.numeric.count(source.toStdString()) != 0)
+        {
+          _curve_load_callback(source.toStdString());
+        }
+      }
+    }
+
     try
     {
       std::string name = new_plot_name.empty() ? "no_name" : new_plot_name;

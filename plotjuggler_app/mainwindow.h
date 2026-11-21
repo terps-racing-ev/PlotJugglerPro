@@ -98,6 +98,8 @@ public slots:
 
   void onPlotTabAdded(PlotDocker* docker);
 
+  void exportTabToExcel(PlotDocker* docker);
+
   void on_tabbedAreaDestroyed(QObject* object);
 
   void updateDataAndReplot(bool replot_hidden_tabs);

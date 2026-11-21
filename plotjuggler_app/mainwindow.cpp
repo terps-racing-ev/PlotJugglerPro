@@ -63,6 +63,7 @@
 #include "PlotJuggler/reactive_function.h"
 #include "multifile_prefix.h"
 #include "sharepoint_log_dialog.h"
+#include "sharepoint_upload_dialog.h"
 
 #include "update_checker.h"
 #include "ui_aboutdialog.h"
@@ -365,6 +366,11 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
 
   connect(this, &MainWindow::stylesheetChanged, _main_tabbed_widget,
           &TabbedPlotWidget::on_stylesheetChanged);
+
+  auto* export_excel_action = new QAction(tr("Export Tab to Excel / SharePoint..."), this);
+  connect(export_excel_action, &QAction::triggered, this,
+          [this]() { exportTabToExcel(_main_tabbed_widget->currentTab()); });
+  ui->menuTools->insertAction(ui->menuTools->actions().value(0), export_excel_action);
 
   ui->tabsFrame->layout()->addWidget(_main_tabbed_widget);
   ui->leftLayout->addWidget(_curvelist_widget, 1);
@@ -1099,6 +1105,21 @@ void MainWindow::onMapPanelAdded(MapDockPanel* panel)
   {
     panel->onTimeUpdated(_tracker_time);
   }
+}
+
+void MainWindow::exportTabToExcel(PlotDocker* docker)
+{
+  if (!docker)
+  {
+    return;
+  }
+  QStringList source_files;
+  for (const auto& loaded : _loaded_datafiles_history)
+  {
+    source_files.push_back(loaded.filename);
+  }
+  PJ::SharePointUploadDialog dialog(docker, source_files, this);
+  dialog.exec();
 }
 
 void MainWindow::onPlotTabAdded(PlotDocker* docker)

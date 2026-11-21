@@ -69,6 +69,7 @@ set(PLOTJUGGLER_SRC
     point_series_xy.cpp
     # plotzoomer.cpp
     plot_background.cpp
+    plot_cursors.cpp
     run_panel.cpp
     run_plot_items.cpp
     run_set.cpp

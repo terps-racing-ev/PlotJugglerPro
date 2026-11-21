@@ -2,8 +2,8 @@
 <Package>
   <DisplayName>PlotJugglerPro Main App</DisplayName>
   <Description>Install PlotJugglerPro with basic plugins.</Description>
-  <Version>2026.11.17</Version>
-  <ReleaseDate>2026-11-17</ReleaseDate>
+  <Version>2026.11.18</Version>
+  <ReleaseDate>2026-11-19</ReleaseDate>
   <Default>script</Default>
   <Script>installscript.qs</Script>
   <UserInterfaces>

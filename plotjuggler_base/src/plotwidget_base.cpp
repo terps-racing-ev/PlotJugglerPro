@@ -937,6 +937,13 @@ void PlotWidgetBase::setZoomEnabled(bool enabled)
   p->magnifier->setEnabled(enabled);
   p->panner1->setEnabled(enabled);
   p->panner2->setEnabled(enabled);
+
+  // Enabling a Qwt picker/panner re-installs its event filter on the canvas,
+  // which makes it run before ours. Re-install ours so it stays first and can
+  // claim mouse presses (legend clicks, reference-line drags) before a zoom or
+  // pan starts.
+  qwtPlot()->canvas()->removeEventFilter(this);
+  qwtPlot()->canvas()->installEventFilter(this);
 }
 
 bool PlotWidgetBase::isZoomEnabled() const

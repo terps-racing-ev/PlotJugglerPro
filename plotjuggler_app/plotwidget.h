@@ -35,6 +35,7 @@
 
 #include "plot_background.h"
 #include "run_plot_items.h"
+#include "plot_cursors.h"
 
 class StatisticsDialog;
 class DockWidget;
@@ -242,6 +243,12 @@ private:
 
   std::unique_ptr<BackgroundColorItem> _background_item;
   RunBandItem* _run_band_item = nullptr;
+
+  // Oscilloscope-style X/Y reference lines, shown only in time-series mode.
+  std::unique_ptr<PlotCursors> _cursors;
+  int _dragging_cursor = -1;
+  void addCursor(PlotCursors::Axis axis, const QPoint& canvas_pos);
+  void showCursorMenu(int index, const QPoint& canvas_pos);
 
   bool _compare_mode = false;
   std::vector<std::string> _compare_signals;

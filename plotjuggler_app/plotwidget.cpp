@@ -13,6 +13,7 @@
 #include <QDragMoveEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QMenu>
 #include <QMimeData>
@@ -187,6 +188,9 @@ PlotWidget::PlotWidget(PlotDataMapRef& datamap, QWidget* parent)
   _run_band_item = new RunBandItem();
   _run_band_item->setTimeOffset(&_time_offset);
   _run_band_item->attach(qwtPlot());
+
+  _cursors = std::make_unique<PlotCursors>(qwtPlot());
+  _cursors->setVisible(!isXYPlot());
 
   connect(&RunSet::instance(), &RunSet::runsChanged, this, [this]() {
     if (_compare_mode)
@@ -410,6 +414,29 @@ void PlotWidget::canvasContextMenuTriggered(const QPoint& pos)
   }
   menu.addAction(_flip_y);
   menu.addSeparator();
+
+  if (!isXYPlot())
+  {
+    QMenu* ref_menu = menu.addMenu("Reference Lines");
+    ref_menu->setIcon(LoadSvg(":/resources/svg/reference_line.svg", theme));
+    QAction* add_x = ref_menu->addAction("Add X Line (vertical)");
+    QAction* add_y = ref_menu->addAction("Add Y Line (horizontal)");
+    ref_menu->addSeparator();
+    QAction* remove_all = ref_menu->addAction("Remove All Reference Lines");
+    add_x->setEnabled(_cursors->canAdd(PlotCursors::AXIS_X));
+    add_y->setEnabled(_cursors->canAdd(PlotCursors::AXIS_Y));
+    remove_all->setEnabled(!_cursors->empty());
+    connect(add_x, &QAction::triggered, this,
+            [this, pos]() { addCursor(PlotCursors::AXIS_X, pos); });
+    connect(add_y, &QAction::triggered, this,
+            [this, pos]() { addCursor(PlotCursors::AXIS_Y, pos); });
+    connect(remove_all, &QAction::triggered, this, [this]() {
+      _cursors->clear();
+      replot();
+      emit undoableChange();
+    });
+    menu.addSeparator();
+  }
   menu.addAction(_action_copy);
   menu.addAction(_action_paste);
   menu.addAction(_action_image_to_clipboard);
@@ -983,6 +1010,11 @@ QDomElement PlotWidget::xmlSaveState(QDomDocument& doc) const
   plot_el.setAttribute("flip_x", isXYPlot() && _flip_x->isChecked() ? "true" : "false");
   plot_el.setAttribute("flip_y", _flip_y->isChecked() ? "true" : "false");
 
+  if (!isXYPlot())
+  {
+    _cursors->xmlSave(doc, plot_el);
+  }
+
   switch (lineWidth())
   {
     case POINTS_1_0:
@@ -1017,6 +1049,8 @@ bool PlotWidget::xmlLoadState(QDomElement& plot_widget, bool autozoom)
 
   _flip_x->setChecked(plot_widget.attribute("flip_x") == "true");
   _flip_y->setChecked(plot_widget.attribute("flip_y") == "true");
+
+  _cursors->xmlLoad(plot_widget);
 
   auto line_width_str = plot_widget.attribute("line_width", QString("1.0"));
   if (line_width_str == "1.0")
@@ -1467,6 +1501,8 @@ void PlotWidget::on_changeTimeOffset(double offset)
     double prev_tracker = _tracker->actualPosition().x();
     double new_tracker = prev_tracker + (prev_offset - offset);
     _tracker->setPosition(QPointF(new_tracker, 0.0));
+    // keep X reference lines pinned to the same data, like the tracker
+    _cursors->shiftX(prev_offset - offset);
   }
 
   if (fabs(prev_offset - offset) > std::numeric_limits<double>::epsilon())
@@ -1492,6 +1528,7 @@ void PlotWidget::on_changeTimeOffset(double offset)
 void PlotWidget::on_changeDateTimeScale(bool enable)
 {
   _use_date_time_scale = enable;
+  _cursors->setXDateTime(enable && !isXYPlot());
   bool is_timescale =
       dynamic_cast<TimeScaleDraw*>(qwtPlot()->axisScaleDraw(QwtPlot::xBottom)) != nullptr;
 
@@ -1732,6 +1769,7 @@ void PlotWidget::onFlipAxis()
     rect.setLeft(x1);
     rect.setRight(x2);
     setZoomRectangle(rect, false);
+    replot();  // setZoomRectangle only updates the scales; redraw so the flip shows now
   }
   emit undoableChange();
 }
@@ -1924,6 +1962,12 @@ void PlotWidget::setModeXY(bool enable)
 
   enableTracker(!enable);
   _run_band_item->setVisible(!enable && !_compare_mode);
+  if (enable)
+  {
+    _cursors->clear();  // time/value lines have no meaning on an XY plot
+  }
+  _cursors->setVisible(!enable);
+  _dragging_cursor = -1;
 
   if (enable)
   {
@@ -1941,6 +1985,59 @@ void PlotWidget::setModeXY(bool enable)
   zoomOut(true);
   on_changeDateTimeScale(_use_date_time_scale);
   replot();
+}
+
+void PlotWidget::addCursor(PlotCursors::Axis axis, const QPoint& canvas_pos)
+{
+  if (_cursors->add(axis, _cursors->valueAt(axis, canvas_pos)) >= 0)
+  {
+    replot();
+    emit undoableChange();
+  }
+}
+
+void PlotWidget::showCursorMenu(int index, const QPoint& canvas_pos)
+{
+  QSettings settings;
+  QString theme = settings.value("StyleSheet::theme", "light").toString();
+  const QString name = _cursors->name(index);
+
+  QMenu menu(qwtPlot());
+  menu.setStyleSheet(kCompactMenuIconStyle);
+  QAction* set_value = menu.addAction(QString("Set %1 Value...").arg(name));
+  set_value->setIcon(LoadSvg(":/resources/svg/pencil-edit.svg", theme));
+  QAction* remove = menu.addAction(QString("Remove %1").arg(name));
+  remove->setIcon(LoadSvg(":/resources/svg/trash.svg", theme));
+  menu.addSeparator();
+  QAction* remove_all = menu.addAction("Remove All Reference Lines");
+
+  QAction* selected = menu.exec(qwtPlot()->canvas()->mapToGlobal(canvas_pos));
+  if (selected == set_value)
+  {
+    bool ok = false;
+    const double value = QInputDialog::getDouble(
+        qwtPlot(), "Reference Line", QString("%1 value:").arg(name), _cursors->value(index),
+        std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(), 6, &ok);
+    if (!ok)
+    {
+      return;
+    }
+    _cursors->setValue(index, value);
+  }
+  else if (selected == remove)
+  {
+    _cursors->remove(index);
+  }
+  else if (selected == remove_all)
+  {
+    _cursors->clear();
+  }
+  else
+  {
+    return;
+  }
+  replot();
+  emit undoableChange();
 }
 
 void PlotWidget::updateAvailableTransformers()
@@ -2225,6 +2322,15 @@ bool PlotWidget::canvasEventFilter(QEvent* event)
       if (mouse_event->button() == Qt::LeftButton)
       {
         const QPoint press_point = mouse_event->pos();
+        if (!isXYPlot() && mouse_event->modifiers() == Qt::NoModifier)
+        {
+          const int hit = _cursors->hitTest(press_point);
+          if (hit >= 0)
+          {
+            _dragging_cursor = hit;
+            return true;  // grab the reference line instead of zooming
+          }
+        }
         if (mouse_event->modifiers() == Qt::ShiftModifier)  // time tracker
         {
           QPointF pointF(qwtPlot()->invTransform(QwtPlot::xBottom, press_point.x()),
@@ -2330,6 +2436,15 @@ bool PlotWidget::canvasEventFilter(QEvent* event)
             }
             return true;
           }
+          if (!isXYPlot() && _context_menu_enabled)
+          {
+            const int hit = _cursors->hitTest(mouse_event->pos());
+            if (hit >= 0)
+            {
+              showCursorMenu(hit, mouse_event->pos());
+              return true;
+            }
+          }
           canvasContextMenuTriggered(mouse_event->pos());
           return true;  // don't pass to canvas().
         }
@@ -2347,6 +2462,28 @@ bool PlotWidget::canvasEventFilter(QEvent* event)
       const QPoint point = mouse_event->pos();
       QPointF pointF(qwtPlot()->invTransform(QwtPlot::xBottom, point.x()),
                      qwtPlot()->invTransform(QwtPlot::yLeft, point.y()));
+
+      if (_dragging_cursor >= 0)
+      {
+        if (_dragging_cursor < _cursors->count())
+        {
+          const auto axis = _cursors->axis(_dragging_cursor);
+          _cursors->setValue(_dragging_cursor, _cursors->valueAt(axis, point));
+          replot();
+        }
+        return true;
+      }
+
+      if (!isXYPlot() && mouse_event->buttons() == Qt::NoButton)
+      {
+        const int hit = _cursors->hitTest(point);
+        if (hit >= 0)
+        {
+          qwtPlot()->canvas()->setCursor(_cursors->axis(hit) == PlotCursors::AXIS_X ?
+                                             Qt::SizeHorCursor :
+                                             Qt::SizeVerCursor);
+        }
+      }
 
       if (mouse_event->buttons() == Qt::LeftButton && mouse_event->modifiers() == Qt::ShiftModifier)
       {
@@ -2370,6 +2507,12 @@ bool PlotWidget::canvasEventFilter(QEvent* event)
     }
     break;
     case QEvent::MouseButtonRelease: {
+      if (_dragging_cursor >= 0)
+      {
+        _dragging_cursor = -1;
+        emit undoableChange();
+        return true;
+      }
       if (_dragging.mode == DragInfo::NONE)
       {
         return false;
@@ -2450,6 +2593,7 @@ void PlotWidget::setCompareMode(bool enable)
     return;
   }
   removeAllCurves();
+  _cursors->clear();  // absolute time and run-relative time don't map onto each other
   _compare_mode = enable;
   _run_band_item->setVisible(!enable && !isXYPlot());
   on_changeTimeOffset(0.0);
